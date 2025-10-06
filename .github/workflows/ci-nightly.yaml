@@ -15,7 +15,7 @@ jobs:
 
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
-    
+
   cargo-shear:
     uses: ./.github/workflows/cargo-shear.yaml
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
