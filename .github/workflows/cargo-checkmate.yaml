@@ -1,4 +1,4 @@
-name: Cargo checkmate
+name: Cargo Checkmate
 
 on: [workflow_call]
 
