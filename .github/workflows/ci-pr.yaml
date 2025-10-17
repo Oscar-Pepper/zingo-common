@@ -9,15 +9,15 @@ on:
 
 jobs:
   reject-trailing-whitespace:
-    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
 
   cargo-shear:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-shear.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
+    uses: zingolabs/infrastructure/.github/workflows/cargo-shear.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
 
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
 
   cargo-hack-check:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
+    uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
     with:
       hack-subcommand: check
