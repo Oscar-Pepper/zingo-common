@@ -9,14 +9,7 @@ on:
 
 jobs:
   reject-trailing-whitespace:
-    name: Reject trailing whitespace
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Reject trailing whitespace
-        run: ./utils/trailing-whitespace.sh reject
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
 
   cargo-shear:
     uses: zingolabs/infrastructure/.github/workflows/cargo-shear.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
