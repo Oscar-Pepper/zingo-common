@@ -17,10 +17,10 @@ jobs:
         run: ./utils/trailing-whitespace.sh reject
 
   cargo-shear:
-    uses: ./.github/workflows/cargo-shear.yaml
+    uses: zingolabs/infrastructure/.github/workflows/cargo-shear.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
 
   cargo-checkmate:
-    uses: ./.github/workflows/cargo-checkmate.yaml
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@867b6501f3e6145ddce9c84b64fdda961e31e24b
 
   cargo-hack-build:
     uses: ./.github/workflows/cargo-hack.yaml
