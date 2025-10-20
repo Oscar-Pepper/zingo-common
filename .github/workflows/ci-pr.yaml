@@ -10,7 +10,7 @@ on:
 
 jobs:
   reject-trailing-whitespace:
-    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@843c3b12c87bff458154a25ccc1bbf9be09d628b
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
 
   cargo-shear:
     name: Cargo Shear
@@ -20,10 +20,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run cargo-shear
-        uses: zingolabs/infrastructure/.github/actions/cargo-shear@843c3b12c87bff458154a25ccc1bbf9be09d628b
+        uses: zingolabs/infrastructure/.github/actions/cargo-shear@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
 
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@843c3b12c87bff458154a25ccc1bbf9be09d628b
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
 
   cargo-hack-check:
     name: Cargo Hack Check
@@ -33,6 +33,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run cargo-hack
-        uses: zingolabs/infrastructure/.github/actions/cargo-hack@843c3b12c87bff458154a25ccc1bbf9be09d628b
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@6b03f1ad04f8843d543fbae2a84360ba1c4812cc
         with:
           hack-subcommand: check
