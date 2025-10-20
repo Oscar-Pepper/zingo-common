@@ -10,15 +10,29 @@ on:
 
 jobs:
   reject-trailing-whitespace:
-    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@843c3b12c87bff458154a25ccc1bbf9be09d628b
 
   cargo-shear:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-shear.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    name: Cargo Shear
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-shear
+        uses: zingolabs/infrastructure/.github/actions/cargo-shear@843c3b12c87bff458154a25ccc1bbf9be09d628b
 
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@843c3b12c87bff458154a25ccc1bbf9be09d628b
 
   cargo-hack-check:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-hack.yaml@f074c3a26bf2d56f5f8bf0ac3d47e0da0539918c
-    with:
-      hack-subcommand: check
+    name: Cargo Hack Check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-hack
+        uses: zingolabs/infrastructure/.github/actions/cargo-hack@843c3b12c87bff458154a25ccc1bbf9be09d628b
+        with:
+          hack-subcommand: check
