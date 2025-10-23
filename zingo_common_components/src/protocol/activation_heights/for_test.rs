@@ -3,13 +3,13 @@ use zebra_chain::parameters;
 /// Get the default all nu activated at 1, Network
 #[must_use]
 pub fn current_nus_configured_in_block_one_regtest_net() -> parameters::Network {
-    parameters::Network::new_regtest(all_height_one_nus())
+    parameters::Network::new_regtest(all_height_one_nus().into())
 }
 
 /// Get sequentially activated (1,2,3,4,5,6,7,8) nus network
 #[must_use]
 pub fn nus_configured_in_sequence_regtest_net() -> parameters::Network {
-    parameters::Network::new_regtest(sequential_height_nus())
+    parameters::Network::new_regtest(sequential_height_nus().into())
 }
 
 #[must_use]
