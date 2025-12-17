@@ -1,5 +1,5 @@
 [package]
-name = "zingo_netutils"
+name = "zingo-netutils"
 version = "1.0.0"
 description = "network utility crate"
 authors = ["zingo@zingolabs.org"]
