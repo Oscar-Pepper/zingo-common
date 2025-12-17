@@ -6536,7 +6536,7 @@ dependencies = [
 
 [[package]]
 name = "zingo_netutils"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "http",
  "http-body",
