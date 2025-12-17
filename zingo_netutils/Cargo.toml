@@ -1,8 +1,15 @@
 [package]
 name = "zingo_netutils"
 version = "1.0.0"
+description = "network utility crate"
 authors = ["zingo@zingolabs.org"]
 edition = "2024"
+repository = "https://github.com/zingolabs/zingo-common"
+homepage = "https://github.com/zingolabs/zingo-common"
+license = "MIT"
+
+[badges]
+maintenance = { status = "actively-developed" }
 
 [dependencies]
 http-body.workspace = true
@@ -10,13 +17,11 @@ http.workspace = true
 hyper-rustls.workspace = true
 hyper-util.workspace = true
 hyper.workspace = true
+thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
 webpki-roots = "0.25"
-
-
-thiserror.workspace = true
 
 zcash_client_backend = { version = "0.20", features = [
     "lightwalletd-tonic",
@@ -24,9 +29,6 @@ zcash_client_backend = { version = "0.20", features = [
     "transparent-inputs",
     "tor",
 ] }
-
-[features]
-test-features = []
 
 [dev-dependencies]
 rustls-pemfile.workspace = true
