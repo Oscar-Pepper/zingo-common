@@ -10,9 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Added
-- support for Zebra 4.1.0
-- support for Zebra 4
+
 ### Changed
 
 ### Removed
 
+## [0.2.0] - 2026-02-12
+
+### Deprecated
+
+### Added
+
+### Changed
+
+- Support for Zebra 4.1.0 through `zebra-chain = "5.0"`
+- Bump `tonic` from `0.13` to `0.14`, with `tls-webpki-roots` enabled.
+
+### Removed
+
+## [0.1.0]
+
+NOT PUBLISHED
