@@ -3,8 +3,6 @@
 //! This crate provides the `GrpcConnector` struct,
 //! used to communicate with an indexer.
 
-use std::sync::Arc;
-
 use client::client_from_connector;
 use http::{Uri, uri::PathAndQuery};
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -77,18 +75,45 @@ impl GrpcConnector {
     ) -> impl std::future::Future<
         Output = Result<CompactTxStreamerClient<UnderlyingService>, GetClientError>,
     > {
-        let uri = Arc::new(self.uri.clone());
+        let uri = self.uri.clone();
+
         async move {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
+
             let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
             let authority = uri
                 .authority()
                 .ok_or(GetClientError::InvalidAuthority)?
                 .clone();
+
+            match uri.scheme_str() {
+                Some("https") | Some("http") => {}
+                _ => return Err(GetClientError::InvalidScheme),
+            }
+
+            // Infallible request rewrite: scheme/authority came from a validated `Uri`,
+            // `path_and_query` is a valid `PathAndQuery` from the request.
+            let rewrite = move |mut request: http::Request<_>| {
+                let path_and_query = request
+                    .uri()
+                    .path_and_query()
+                    .cloned()
+                    .unwrap_or(PathAndQuery::from_static("/"));
+
+                let new_uri = Uri::builder()
+                    .scheme(scheme.clone())
+                    .authority(authority.clone())
+                    .path_and_query(path_and_query)
+                    .build()
+                    .expect("scheme/authority/path_and_query are known-valid");
+
+                *request.uri_mut() = new_uri;
+                request
+            };
+
             if uri.scheme_str() == Some("https") {
                 let mut root_store = RootCertStore::empty();
-                //webpki uses a different struct for TrustAnchor
                 root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor_ref| {
                     TrustAnchor {
                         subject: Der::from_slice(anchor_ref.subject),
@@ -104,7 +129,6 @@ impl GrpcConnector {
                 let connector = tower::ServiceBuilder::new()
                     .layer_fn(move |s| {
                         let tls = config.clone();
-
                         hyper_rustls::HttpsConnectorBuilder::new()
                             .with_tls_config(tls)
                             .https_or_http()
@@ -112,53 +136,22 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http_connector);
-                let client = client_from_connector(connector, false);
-                let svc = tower::ServiceBuilder::new()
-                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<_>| {
-                        let path_and_query = request
-                            .uri()
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/"));
-                        let uri = Uri::builder()
-                            .scheme(scheme.clone())
-                            .authority(authority.clone())
-                            //here. The Request's uri contains the path to the GRPC server and
-                            //the method being called
-                            .path_and_query(path_and_query)
-                            .build()
-                            .unwrap();
 
-                        *request.uri_mut() = uri;
-                        request
-                    })
+                // Enforce HTTP/2 for gRPC, otherwise it will seem "connected", but won't work
+                let client = client_from_connector(connector, true);
+
+                let svc = tower::ServiceBuilder::new()
+                    .map_request(rewrite)
                     .service(client);
 
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = client_from_connector(connector, true);
-                let svc = tower::ServiceBuilder::new()
-                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut request: http::Request<_>| {
-                        let path_and_query = request
-                            .uri()
-                            .path_and_query()
-                            .cloned()
-                            .unwrap_or(PathAndQuery::from_static("/"));
-                        let uri = Uri::builder()
-                            .scheme(scheme.clone())
-                            .authority(authority.clone())
-                            //here. The Request's uri contains the path to the GRPC server and
-                            //the method being called
-                            .path_and_query(path_and_query)
-                            .build()
-                            .unwrap();
 
-                        *request.uri_mut() = uri;
-                        request
-                    })
+                let client = client_from_connector(connector, true);
+
+                let svc = tower::ServiceBuilder::new()
+                    .map_request(rewrite)
                     .service(client);
 
                 Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
@@ -206,7 +199,7 @@ impl GrpcConnector {
                 })
                 .service(http_connector);
 
-            let client = client_from_connector(connector, false);
+            let client = client_from_connector(connector, true);
 
             let svc = tower::ServiceBuilder::new()
                 .map_request(move |mut request: http::Request<_>| {
@@ -231,7 +224,6 @@ impl GrpcConnector {
         } else {
             let connector = tower::ServiceBuilder::new().service(http_connector);
 
-            // NOTE: keep exactly as prod for the "pre-fix" test
             let client = client_from_connector(connector, true);
 
             let svc = tower::ServiceBuilder::new()
@@ -295,7 +287,7 @@ mod tests {
     //! - We explicitly install a rustls crypto provider to avoid
     //!   provider-selection panics in test binaries.
 
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
     use http::{Request, Response};
     use hyper::{
@@ -560,9 +552,6 @@ mod tests {
     async fn rejects_non_http_schemes() {
         let uri: http::Uri = "ftp://example.com:1234".parse().unwrap();
         let connector = GrpcConnector::new(uri);
-
-        // This SHOULD be Err(InvalidScheme),
-        // but the current code returns Ok(...)
         let res = connector.get_client().await;
 
         assert!(
@@ -588,35 +577,29 @@ mod tests {
         let tls_config = load_test_server_config();
         let acceptor = TlsAcceptor::from(tls_config);
 
-        let send_version = oneshot::channel::<http::Version>();
-        let send_version_tx = Arc::new(Mutex::new(Some(send_version.0)));
-        let send_version_rx = send_version.1;
+        // Server: HTTP/1.1-only over TLS.
+        // If the client is truly HTTP/2-only, Hyper's http1 parser will error with VersionH2.
+        let server_task = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.expect("accept failed");
 
-        let server_task = tokio::spawn({
-            let send_version_tx = Arc::clone(&send_version_tx);
-            async move {
-                let accept = listener.accept().await.expect("accept failed");
-                let socket = accept.0;
+            let tls_stream = acceptor.accept(socket).await.expect("tls accept failed");
+            let io = TokioIo::new(tls_stream);
 
-                let tls_stream = acceptor.accept(socket).await.expect("tls accept failed");
-                let io = TokioIo::new(tls_stream);
+            let svc = service_fn(|_req: Request<Incoming>| async move {
+                Ok::<_, hyper::Error>(Response::new(Full::new(Bytes::from_static(b"ok"))))
+            });
 
-                let svc = service_fn(move |req: Request<Incoming>| {
-                    let version = req.version();
-                    let send_version_tx = Arc::clone(&send_version_tx);
+            let res = hyper::server::conn::http1::Builder::new()
+                .serve_connection(io, svc)
+                .await;
 
-                    async move {
-                        if let Some(tx) = send_version_tx.lock().expect("mutex poisoned").take() {
-                            let _ = tx.send(version);
-                        }
-                        Ok::<_, hyper::Error>(Response::new(Full::new(Bytes::from_static(b"ok"))))
-                    }
-                });
-
-                hyper::server::conn::http1::Builder::new()
-                    .serve_connection(io, svc)
-                    .await
-                    .expect("serve_connection failed");
+            // The client sent an h2 preface to an h1 server, which is expected.
+            if let Err(err) = res {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("VersionH2") || msg.contains("version") || msg.contains("HTTP/2"),
+                    "unexpected server error (expected VersionH2-ish parse error), got: {msg}"
+                );
             }
         });
 
@@ -624,6 +607,7 @@ mod tests {
         let uri = base.parse::<http::Uri>().expect("bad base uri");
         let connector = GrpcConnector::new(uri);
 
+        // Must match production: HTTP/2-only in HTTPS branch
         let mut svc = connector
             .get_service_for_tests()
             .await
@@ -636,17 +620,22 @@ mod tests {
             .body(tonic::body::Body::empty())
             .expect("request build failed");
 
-        let _ = tower::ServiceExt::oneshot(&mut svc, req)
-            .await
-            .expect("request failed");
+        // The request MUST fail, meaning, not downgrade to HTTP/1.1
+        let res = tower::ServiceExt::oneshot(&mut svc, req).await;
+        assert!(
+            res.is_err(),
+            "expected HTTP/2-only client to fail against HTTP/1.1-only TLS server"
+        );
 
-        let version = send_version_rx.await.expect("no request observed");
-
-        // Pre-fix: this will almost certainly be HTTP_11, demonstrating the downgrade.
-        // If you're trying to write a test that FAILS today, keep HTTP_2 here.
-        assert_eq!(version, http::Version::HTTP_2);
-
-        let _ = server_task.await;
+        let join = timeout(Duration::from_secs(3), server_task).await;
+        match join {
+            Ok(Ok(())) => {}
+            Ok(Err(join_err)) => panic!("server task join failed: {join_err}"),
+            Err(_) => {
+                // In rare cases the client might fail before server finishes parsing, abort to be safe.
+                // This is still success for the test.
+            }
+        }
     }
 
     /// Ensures URI rewriting returns a structured error for invalid inputs instead
@@ -657,15 +646,12 @@ mod tests {
     #[test]
     fn rewrite_returns_error_instead_of_panicking() {
         // Intentionally invalid path and query string.
-        let bad = "not-a-path";
+        let bad = "not-a path";
 
         let result = rewrite_request_uri("https", "example.com:443", bad);
 
-        // Before the fix, a helper that uses unwrap would panic.
-        // After the fix, it should return InvalidPathAndQuery.
         assert!(matches!(result, Err(GetClientError::InvalidPathAndQuery)));
 
-        // This line avoids any unused warnings if you want to keep PathAndQuery imported.
         let _ = PathAndQuery::from_static("/");
     }
 }
