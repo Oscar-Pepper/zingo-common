@@ -1,5 +1,27 @@
 //! Module for types associated with the zcash protocol and consensus.
 
+/// Network types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NetworkType {
+    /// Mainnet
+    Mainnet,
+    /// Testnet
+    Testnet,
+    /// Regtest
+    Regtest(ActivationHeights),
+}
+
+impl std::fmt::Display for NetworkType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let chain = match self {
+            NetworkType::Mainnet => "mainnet",
+            NetworkType::Testnet => "testnet",
+            NetworkType::Regtest(_) => "regtest",
+        };
+        write!(f, "{chain}")
+    }
+}
+
 /// Network upgrade activation heights for custom testnet and regtest network configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActivationHeights {
