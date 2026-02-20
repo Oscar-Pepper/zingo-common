@@ -21,7 +21,7 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
-webpki-roots = "0.25"
+webpki-roots.workspace = true
 
 zcash_client_backend = { version = "0.21", features = [
     "lightwalletd-tonic",

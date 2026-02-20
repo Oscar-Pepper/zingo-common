@@ -4,9 +4,6 @@ resolver = "2"
 
 [workspace.dependencies]
 
-# content
-zebra-chain = "5.0"
-
 # network
 http = "1.1.0"
 http-body = "1"
@@ -21,5 +18,5 @@ tonic = { version = "0.14", features = [
 tower = { version = "0.5" }
 webpki-roots = "0.25"
 
-# exceptions
+# error
 thiserror = "1.0.64"
