@@ -7,16 +7,18 @@ resolver = "2"
 # network
 http = "1.1.0"
 http-body = "1"
-hyper-util = "0.1"
+hyper-util = "0.1.20"
 hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27", features = ["http2"] }
+http-body-util = "0.1.3"
 rustls-pemfile = "2"
 tokio-rustls = "0.26"
-tonic = { version = "0.14", features = [
-    "tls-webpki-roots",
-] }
+tokio = { version = "1" }
+tonic = { version = "0.14.4", features = ["tls-webpki-roots"] }
 tower = { version = "0.5" }
 webpki-roots = "0.25"
 
 # error
 thiserror = "1.0.64"
+x509-parser = "0.18"
+zcash_client_backend = "0.21"
