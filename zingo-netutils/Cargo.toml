@@ -21,9 +21,14 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 tower.workspace = true
-webpki-roots = { workspace = true }
+webpki-roots.workspace = true
 
-zcash_client_backend = { workspace = true, features = ["lightwalletd-tonic", "orchard", "transparent-inputs", "tor"] }
+zcash_client_backend = { workspace = true, features = [
+    "lightwalletd-tonic",
+    "orchard",
+    "transparent-inputs",
+    "tor",
+] }
 
 [dev-dependencies]
 rustls-pemfile.workspace = true
