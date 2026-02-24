@@ -15,8 +15,6 @@ rustls-pemfile = "2"
 tokio-rustls = "0.26"
 tokio = { version = "1" }
 tonic = { version = "0.14.4", features = ["tls-webpki-roots"] }
-tower = { version = "0.5" }
-webpki-roots = "0.25"
 
 # error
 thiserror = "1.0.64"
