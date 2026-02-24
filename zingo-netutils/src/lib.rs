@@ -3,7 +3,6 @@
 //! This crate provides the `GrpcConnector` struct,
 //! used to communicate with an indexer.
 
-use http::Uri;
 #[cfg(test)]
 use tokio_rustls::rustls::RootCertStore;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
@@ -43,69 +42,50 @@ pub mod client {
     }
 }
 
+#[cfg(test)]
+fn load_test_cert_pem() -> Option<Vec<u8>> {
+    const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
+    std::fs::read(TEST_PEMFILE_PATH).ok()
+}
+fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
+    // Allow self-signed certs in tests
+    #[cfg(test)]
+    {
+        if let Some(pem) = load_test_cert_pem() {
+            return Ok(
+                ClientTlsConfig::new().ca_certificate(tonic::transport::Certificate::from_pem(pem))
+            );
+        }
+    }
+
+    Ok(ClientTlsConfig::new())
+}
 /// The connector, containing the URI to connect to.
 /// This type is mostly an interface to the `get_client` method.
 /// The proto-generated `CompactTxStreamerClient` type is the main
 /// interface to actually communicating with a Zcash indexer.
-#[derive(Clone)]
-pub struct GrpcConnector {
+/// Connect to the URI, and return a Client. For the full list of methods
+/// the client supports, see the service.proto file (some of the types
+/// are defined in the `compact_formats.proto` file).
+pub async fn get_client(
     uri: http::Uri,
-}
-
-impl GrpcConnector {
-    /// Takes a URI, and wraps in a `GrpcConnector`
-    pub fn new(uri: http::Uri) -> Self {
-        Self { uri }
+) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
+    let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
+    if scheme != "http" && scheme != "https" {
+        return Err(GetClientError::InvalidScheme);
     }
+    let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
 
-    /// The URI to connect to.
-    pub fn uri(&self) -> &Uri {
-        &self.uri
-    }
+    let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
 
-    /// Connect to the URI, and return a Client. For the full list of methods
-    /// the client supports, see the service.proto file (some of the types
-    /// are defined in the `compact_formats.proto` file).
-    pub async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
-        let scheme = self.uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = self
-            .uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?;
+    let channel = if scheme == "https" {
+        let tls = client_tls_config()?;
+        endpoint.tls_config(tls)?.connect().await?
+    } else {
+        endpoint.connect().await?
+    };
 
-        let endpoint = Endpoint::from_shared(self.uri.to_string())?.tcp_nodelay(true);
-
-        let channel = if scheme == "https" {
-            let tls = self.client_tls_config()?;
-            endpoint.tls_config(tls)?.connect().await?
-        } else {
-            endpoint.connect().await?
-        };
-
-        Ok(CompactTxStreamerClient::new(channel))
-    }
-
-    fn client_tls_config(&self) -> Result<ClientTlsConfig, GetClientError> {
-        // Allow self-signed certs in tests
-        #[cfg(test)]
-        {
-            if let Some(pem) = Self::load_test_cert_pem() {
-                return Ok(ClientTlsConfig::new()
-                    .ca_certificate(tonic::transport::Certificate::from_pem(pem)));
-            }
-        }
-
-        Ok(ClientTlsConfig::new())
-    }
-
-    #[cfg(test)]
-    fn load_test_cert_pem() -> Option<Vec<u8>> {
-        const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
-        std::fs::read(TEST_PEMFILE_PATH).ok()
-    }
+    Ok(CompactTxStreamerClient::new(channel))
 }
 
 #[cfg(test)]
@@ -147,7 +127,7 @@ mod tests {
 
     use std::time::Duration;
 
-    use http::{Request, Response, uri::PathAndQuery};
+    use http::{Request, Response, Uri, uri::PathAndQuery};
     use hyper::{
         body::{Bytes, Incoming},
         service::service_fn,
@@ -378,8 +358,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_non_http_schemes() {
         let uri: http::Uri = "ftp://example.com:1234".parse().unwrap();
-        let connector = GrpcConnector::new(uri);
-        let res = connector.get_client().await;
+        let res = get_client(uri).await;
 
         assert!(
             res.is_err(),
@@ -426,13 +405,12 @@ mod tests {
 
         let base = format!("https://127.0.0.1:{}", addr.port());
         let uri = base.parse::<http::Uri>().expect("bad base uri");
-        let connector = GrpcConnector::new(uri);
 
-        let endpoint = tonic::transport::Endpoint::from_shared(connector.uri().to_string())
+        let endpoint = tonic::transport::Endpoint::from_shared(uri.to_string())
             .expect("endpoint")
             .tcp_nodelay(true);
 
-        let tls = connector.client_tls_config().expect("tls config");
+        let tls = client_tls_config().expect("tls config");
         let connect_res = endpoint
             .tls_config(tls)
             .expect("tls_config failed")
