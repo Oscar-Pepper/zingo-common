@@ -15,8 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support for Zebra 4.1.0 through `zebra-chain = "5.0"`
 - Bump `tonic` from `0.13` to `0.14`, with `tls-webpki-roots` enabled.
+- **Breaking:** `get_client` now returns `CompactTxStreamerClient<Channel>` instead of
+  `CompactTxStreamerClient<UnderlyingService>`. TLS and transport are handled internally
+  by tonic.
+- **Breaking:** `GetClientError` gains a `Transport` variant (wrapping `tonic::transport::Error`).
 
 ### Removed
+
+- `UnderlyingService` type alias (`BoxCloneService<...>`).
+- Direct dependencies on `tower` and `webpki-roots` (TLS root certs now provided by
+  tonic's `tls-webpki-roots` feature).
 
 ## [1.1.0]
 
