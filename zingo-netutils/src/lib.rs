@@ -156,72 +156,7 @@ mod tests {
     use tokio::{net::TcpListener, sync::oneshot, time::timeout};
     use tokio_rustls::{TlsAcceptor, rustls};
 
-    use crate::tests::utils::{load_test_server_config, rewrite_request_uri};
-
     use super::*;
-
-    mod utils {
-        //! Test helpers shared across multiple test cases.
-
-        use std::sync::Arc;
-
-        use http::Uri;
-        use tokio_rustls::rustls;
-
-        use crate::GetClientError;
-
-        /// Loads a rustls `ServerConfig` for a local TLS server using the committed
-        /// test certificate and private key.
-        ///
-        /// The cert/key pair is *test-only* and is stored under `test-data/`.
-        /// This is used to verify that the client-side root-store injection
-        /// (`add_test_cert_to_roots`) actually enables successful TLS handshakes.
-        pub(crate) fn load_test_server_config() -> Arc<rustls::ServerConfig> {
-            let cert_pem =
-                std::fs::read("test-data/localhost.pem").expect("missing test-data/localhost.pem");
-            let key_pem =
-                std::fs::read("test-data/localhost.key").expect("missing test-data/localhost.key");
-
-            let mut cert_cursor = std::io::BufReader::new(cert_pem.as_slice());
-            let mut key_cursor = std::io::BufReader::new(key_pem.as_slice());
-
-            let certs = rustls_pemfile::certs(&mut cert_cursor)
-                .filter_map(Result::ok)
-                .map(rustls::pki_types::CertificateDer::from)
-                .collect::<Vec<_>>();
-
-            let key = rustls_pemfile::private_key(&mut key_cursor)
-                .expect("failed to read private key")
-                .expect("no private key found");
-
-            let config = rustls::ServerConfig::builder()
-                .with_no_client_auth()
-                .with_single_cert(certs, key)
-                .expect("bad cert or key");
-
-            Arc::new(config)
-        }
-
-        /// Rewrites a request URI by injecting a base `scheme://authority` and a
-        /// request-provided path.
-        ///
-        /// This is a test helper to validate the intended error behavior for
-        /// malformed inputs. The production code currently uses `unwrap()` when
-        /// rebuilding the URI. Tests use this helper to lock in a “no panics,
-        /// return `InvalidPathAndQuery`” contract for the eventual refactor.
-        pub fn rewrite_request_uri(
-            scheme: &str,
-            authority: &str,
-            path_and_query: &str,
-        ) -> Result<Uri, GetClientError> {
-            Uri::builder()
-                .scheme(scheme)
-                .authority(authority)
-                .path_and_query(path_and_query)
-                .build()
-                .map_err(|_| GetClientError::InvalidPathAndQuery)
-        }
-    }
 
     /// Ensures the committed localhost test certificate exists and is parseable as X.509.
     ///
@@ -283,6 +218,37 @@ mod tests {
         );
     }
 
+    /// Loads a rustls `ServerConfig` for a local TLS server using the committed
+    /// test certificate and private key.
+    ///
+    /// The cert/key pair is *test-only* and is stored under `test-data/`.
+    /// This is used to verify that the client-side root-store injection
+    /// (`add_test_cert_to_roots`) actually enables successful TLS handshakes.
+    fn load_test_server_config() -> std::sync::Arc<rustls::ServerConfig> {
+        let cert_pem =
+            std::fs::read("test-data/localhost.pem").expect("missing test-data/localhost.pem");
+        let key_pem =
+            std::fs::read("test-data/localhost.key").expect("missing test-data/localhost.key");
+
+        let mut cert_cursor = std::io::BufReader::new(cert_pem.as_slice());
+        let mut key_cursor = std::io::BufReader::new(key_pem.as_slice());
+
+        let certs = rustls_pemfile::certs(&mut cert_cursor)
+            .filter_map(Result::ok)
+            .map(rustls::pki_types::CertificateDer::from)
+            .collect::<Vec<_>>();
+
+        let key = rustls_pemfile::private_key(&mut key_cursor)
+            .expect("failed to read private key")
+            .expect("no private key found");
+
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .expect("bad cert or key");
+
+        std::sync::Arc::new(config)
+    }
     /// Smoke test: adding the committed localhost cert to a rustls root store enables
     /// a client to complete a TLS handshake and perform an HTTP request.
     ///
@@ -482,6 +448,25 @@ mod tests {
         server_task.abort();
     }
 
+    /// Rewrites a request URI by injecting a base `scheme://authority` and a
+    /// request-provided path.
+    ///
+    /// This is a test helper to validate the intended error behavior for
+    /// malformed inputs. The production code currently uses `unwrap()` when
+    /// rebuilding the URI. Tests use this helper to lock in a “no panics,
+    /// return `InvalidPathAndQuery`” contract for the eventual refactor.
+    fn rewrite_request_uri(
+        scheme: &str,
+        authority: &str,
+        path_and_query: &str,
+    ) -> Result<Uri, GetClientError> {
+        Uri::builder()
+            .scheme(scheme)
+            .authority(authority)
+            .path_and_query(path_and_query)
+            .build()
+            .map_err(|_| GetClientError::InvalidPathAndQuery)
+    }
     /// Ensures URI rewriting returns a structured error for invalid inputs instead
     /// of panicking.
     ///
