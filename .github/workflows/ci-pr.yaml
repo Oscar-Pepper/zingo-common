@@ -33,6 +33,18 @@ jobs:
   cargo-checkmate:
     uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@20485fed7a080e381130ed8120419dc81acae641
 
+  cargo-deny:
+    name: Cargo Deny
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans
+
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04
