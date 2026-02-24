@@ -176,7 +176,7 @@ mod tests {
         /// The cert/key pair is *test-only* and is stored under `test-data/`.
         /// This is used to verify that the client-side root-store injection
         /// (`add_test_cert_to_roots`) actually enables successful TLS handshakes.
-        pub fn load_test_server_config() -> Arc<rustls::ServerConfig> {
+        pub(crate) fn load_test_server_config() -> Arc<rustls::ServerConfig> {
             let cert_pem =
                 std::fs::read("test-data/localhost.pem").expect("missing test-data/localhost.pem");
             let key_pem =
