@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `GrpcConnector` struct, `GrpcConnector::new()`, and `GrpcConnector::uri()`.
 - `UnderlyingService` type alias (`BoxCloneService<...>`).
+- Manual URI rewrite logic (scheme/authority injection into requests); now handled
+  internally by tonic's `Endpoint`.
 - Direct dependencies on `tower` and `webpki-roots` (TLS root certs now provided by
   tonic's `tls-webpki-roots` feature).
 

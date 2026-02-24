@@ -127,7 +127,7 @@ mod tests {
 
     use std::time::Duration;
 
-    use http::{Request, Response, Uri, uri::PathAndQuery};
+    use http::{Request, Response};
     use hyper::{
         body::{Bytes, Incoming},
         service::service_fn,
@@ -424,41 +424,5 @@ mod tests {
         );
 
         server_task.abort();
-    }
-
-    /// Rewrites a request URI by injecting a base `scheme://authority` and a
-    /// request-provided path.
-    ///
-    /// This is a test helper to validate the intended error behavior for
-    /// malformed inputs. The production code currently uses `unwrap()` when
-    /// rebuilding the URI. Tests use this helper to lock in a “no panics,
-    /// return `InvalidPathAndQuery`” contract for the eventual refactor.
-    fn rewrite_request_uri(
-        scheme: &str,
-        authority: &str,
-        path_and_query: &str,
-    ) -> Result<Uri, GetClientError> {
-        Uri::builder()
-            .scheme(scheme)
-            .authority(authority)
-            .path_and_query(path_and_query)
-            .build()
-            .map_err(|_| GetClientError::InvalidPathAndQuery)
-    }
-    /// Ensures URI rewriting returns a structured error for invalid inputs instead
-    /// of panicking.
-    ///
-    /// This is a forward-looking regression test for refactoring production code to
-    /// replace `unwrap()` with `map_err(|_| InvalidPathAndQuery)`.
-    #[test]
-    fn rewrite_returns_error_instead_of_panicking() {
-        // Intentionally invalid path and query string.
-        let bad = "not-a path";
-
-        let result = rewrite_request_uri("https", "example.com:443", bad);
-
-        assert!(matches!(result, Err(GetClientError::InvalidPathAndQuery)));
-
-        let _ = PathAndQuery::from_static("/");
     }
 }
