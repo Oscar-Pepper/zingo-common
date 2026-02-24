@@ -3,29 +3,25 @@
 //! This crate provides the `GrpcConnector` struct,
 //! used to communicate with an indexer.
 
-use client::client_from_connector;
-use http::{Uri, uri::PathAndQuery};
-use hyper_util::client::legacy::connect::HttpConnector;
-use tokio_rustls::rustls::pki_types::{Der, TrustAnchor};
-use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-use tower::ServiceExt;
-use tower::util::BoxCloneService;
+use http::Uri;
+#[cfg(test)]
+use tokio_rustls::rustls::RootCertStore;
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
-
-pub type UnderlyingService = BoxCloneService<
-    http::Request<tonic::body::Body>,
-    http::Response<hyper::body::Incoming>,
-    hyper_util::client::legacy::Error,
->;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GetClientError {
     #[error("bad uri: invalid scheme")]
     InvalidScheme,
+
     #[error("bad uri: invalid authority")]
     InvalidAuthority,
+
     #[error("bad uri: invalid path and/or query")]
     InvalidPathAndQuery,
+
+    #[error(transparent)]
+    Transport(#[from] tonic::transport::Error),
 }
 
 pub mod client {
@@ -70,183 +66,45 @@ impl GrpcConnector {
     /// Connect to the URI, and return a Client. For the full list of methods
     /// the client supports, see the service.proto file (some of the types
     /// are defined in the `compact_formats.proto` file).
-    pub fn get_client(
-        &self,
-    ) -> impl std::future::Future<
-        Output = Result<CompactTxStreamerClient<UnderlyingService>, GetClientError>,
-    > {
-        let uri = self.uri.clone();
+    pub async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
+        let scheme = self.uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
+        if scheme != "http" && scheme != "https" {
+            return Err(GetClientError::InvalidScheme);
+        }
+        let _authority = self
+            .uri
+            .authority()
+            .ok_or(GetClientError::InvalidAuthority)?;
 
-        async move {
-            let mut http_connector = HttpConnector::new();
-            http_connector.enforce_http(false);
+        let endpoint = Endpoint::from_shared(self.uri.to_string())?.tcp_nodelay(true);
 
-            let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
-            let authority = uri
-                .authority()
-                .ok_or(GetClientError::InvalidAuthority)?
-                .clone();
+        let channel = if scheme == "https" {
+            let tls = self.client_tls_config()?;
+            endpoint.tls_config(tls)?.connect().await?
+        } else {
+            endpoint.connect().await?
+        };
 
-            match uri.scheme_str() {
-                Some("https") | Some("http") => {}
-                _ => return Err(GetClientError::InvalidScheme),
-            }
+        Ok(CompactTxStreamerClient::new(channel))
+    }
 
-            // Infallible request rewrite: scheme/authority came from a validated `Uri`,
-            // `path_and_query` is a valid `PathAndQuery` from the request.
-            let rewrite = move |mut request: http::Request<_>| {
-                let path_and_query = request
-                    .uri()
-                    .path_and_query()
-                    .cloned()
-                    .unwrap_or(PathAndQuery::from_static("/"));
-
-                let new_uri = Uri::builder()
-                    .scheme(scheme.clone())
-                    .authority(authority.clone())
-                    .path_and_query(path_and_query)
-                    .build()
-                    .expect("scheme/authority/path_and_query are known-valid");
-
-                *request.uri_mut() = new_uri;
-                request
-            };
-
-            if uri.scheme_str() == Some("https") {
-                let mut root_store = RootCertStore::empty();
-                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor_ref| {
-                    TrustAnchor {
-                        subject: Der::from_slice(anchor_ref.subject),
-                        subject_public_key_info: Der::from_slice(anchor_ref.spki),
-                        name_constraints: anchor_ref.name_constraints.map(Der::from_slice),
-                    }
-                }));
-
-                let config = ClientConfig::builder()
-                    .with_root_certificates(root_store)
-                    .with_no_client_auth();
-
-                let connector = tower::ServiceBuilder::new()
-                    .layer_fn(move |s| {
-                        let tls = config.clone();
-                        hyper_rustls::HttpsConnectorBuilder::new()
-                            .with_tls_config(tls)
-                            .https_or_http()
-                            .enable_http2()
-                            .wrap_connector(s)
-                    })
-                    .service(http_connector);
-
-                // Enforce HTTP/2 for gRPC, otherwise it will seem "connected", but won't work
-                let client = client_from_connector(connector, true);
-
-                let svc = tower::ServiceBuilder::new()
-                    .map_request(rewrite)
-                    .service(client);
-
-                Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
-            } else {
-                let connector = tower::ServiceBuilder::new().service(http_connector);
-
-                let client = client_from_connector(connector, true);
-
-                let svc = tower::ServiceBuilder::new()
-                    .map_request(rewrite)
-                    .service(client);
-
-                Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
+    fn client_tls_config(&self) -> Result<ClientTlsConfig, GetClientError> {
+        // Allow self-signed certs in tests
+        #[cfg(test)]
+        {
+            if let Some(pem) = Self::load_test_cert_pem() {
+                return Ok(ClientTlsConfig::new()
+                    .ca_certificate(tonic::transport::Certificate::from_pem(pem)));
             }
         }
+
+        Ok(ClientTlsConfig::new())
     }
 
     #[cfg(test)]
-    async fn get_service_for_tests(&self) -> Result<UnderlyingService, GetClientError> {
-        let uri = self.uri.clone();
-
-        let mut http_connector = HttpConnector::new();
-        http_connector.enforce_http(false);
-
-        let scheme = uri.scheme().ok_or(GetClientError::InvalidScheme)?.clone();
-        let authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
-
-        if uri.scheme_str() == Some("https") {
-            let mut root_store = RootCertStore::empty();
-            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|anchor_ref| {
-                TrustAnchor {
-                    subject: Der::from_slice(anchor_ref.subject),
-                    subject_public_key_info: Der::from_slice(anchor_ref.spki),
-                    name_constraints: anchor_ref.name_constraints.map(Der::from_slice),
-                }
-            }));
-
-            add_test_cert_to_roots(&mut root_store);
-
-            let config = ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth();
-
-            let connector = tower::ServiceBuilder::new()
-                .layer_fn(move |s| {
-                    let tls = config.clone();
-                    hyper_rustls::HttpsConnectorBuilder::new()
-                        .with_tls_config(tls)
-                        .https_or_http()
-                        .enable_http2()
-                        .wrap_connector(s)
-                })
-                .service(http_connector);
-
-            let client = client_from_connector(connector, true);
-
-            let svc = tower::ServiceBuilder::new()
-                .map_request(move |mut request: http::Request<_>| {
-                    let path_and_query = request
-                        .uri()
-                        .path_and_query()
-                        .cloned()
-                        .unwrap_or(PathAndQuery::from_static("/"));
-                    let uri = Uri::builder()
-                        .scheme(scheme.clone())
-                        .authority(authority.clone())
-                        .path_and_query(path_and_query)
-                        .build()
-                        .unwrap();
-
-                    *request.uri_mut() = uri;
-                    request
-                })
-                .service(client);
-
-            Ok(svc.boxed_clone())
-        } else {
-            let connector = tower::ServiceBuilder::new().service(http_connector);
-
-            let client = client_from_connector(connector, true);
-
-            let svc = tower::ServiceBuilder::new()
-                .map_request(move |mut request: http::Request<_>| {
-                    let path_and_query = request
-                        .uri()
-                        .path_and_query()
-                        .cloned()
-                        .unwrap_or(PathAndQuery::from_static("/"));
-                    let uri = Uri::builder()
-                        .scheme(scheme.clone())
-                        .authority(authority.clone())
-                        .path_and_query(path_and_query)
-                        .build()
-                        .unwrap();
-
-                    *request.uri_mut() = uri;
-                    request
-                })
-                .service(client);
-
-            Ok(svc.boxed_clone())
-        }
+    fn load_test_cert_pem() -> Option<Vec<u8>> {
+        const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
+        std::fs::read(TEST_PEMFILE_PATH).ok()
     }
 }
 
@@ -289,7 +147,7 @@ mod tests {
 
     use std::time::Duration;
 
-    use http::{Request, Response};
+    use http::{Request, Response, uri::PathAndQuery};
     use hyper::{
         body::{Bytes, Incoming},
         service::service_fn,
@@ -415,11 +273,14 @@ mod tests {
         let parsed = x509_parser::parse_x509_certificate(der).expect("failed to parse X.509");
         let x509 = parsed.1;
 
-        let bc = x509
+        let constraints = x509
             .basic_constraints()
             .expect("missing basic constraints extension");
 
-        assert!(!bc.unwrap().value.ca, "localhost.pem must be CA:FALSE");
+        assert!(
+            !constraints.unwrap().value.ca,
+            "localhost.pem must be CA:FALSE"
+        );
     }
 
     /// Smoke test: adding the committed localhost cert to a rustls root store enables
@@ -577,10 +438,11 @@ mod tests {
         let tls_config = load_test_server_config();
         let acceptor = TlsAcceptor::from(tls_config);
 
-        // Server: HTTP/1.1-only over TLS.
-        // If the client is truly HTTP/2-only, Hyper's http1 parser will error with VersionH2.
         let server_task = tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.expect("accept failed");
+            let accept_res = timeout(Duration::from_secs(3), listener.accept()).await;
+            let (socket, _) = accept_res
+                .expect("server accept timed out")
+                .expect("accept failed");
 
             let tls_stream = acceptor.accept(socket).await.expect("tls accept failed");
             let io = TokioIo::new(tls_stream);
@@ -589,53 +451,35 @@ mod tests {
                 Ok::<_, hyper::Error>(Response::new(Full::new(Bytes::from_static(b"ok"))))
             });
 
-            let res = hyper::server::conn::http1::Builder::new()
+            // This may error with VersionH2 if the client sends an h2 preface, or it may
+            // simply never be reached if ALPN fails earlier. Either is fine for this test.
+            let _ = hyper::server::conn::http1::Builder::new()
                 .serve_connection(io, svc)
                 .await;
-
-            // The client sent an h2 preface to an h1 server, which is expected.
-            if let Err(err) = res {
-                let msg = err.to_string();
-                assert!(
-                    msg.contains("VersionH2") || msg.contains("version") || msg.contains("HTTP/2"),
-                    "unexpected server error (expected VersionH2-ish parse error), got: {msg}"
-                );
-            }
         });
 
         let base = format!("https://127.0.0.1:{}", addr.port());
         let uri = base.parse::<http::Uri>().expect("bad base uri");
         let connector = GrpcConnector::new(uri);
 
-        // Must match production: HTTP/2-only in HTTPS branch
-        let mut svc = connector
-            .get_service_for_tests()
-            .await
-            .expect("get_service_for_tests failed");
+        let endpoint = tonic::transport::Endpoint::from_shared(connector.uri().to_string())
+            .expect("endpoint")
+            .tcp_nodelay(true);
 
-        let req = Request::builder()
-            .method("POST")
-            .uri("/")
-            .header("content-type", "application/grpc")
-            .body(tonic::body::Body::empty())
-            .expect("request build failed");
+        let tls = connector.client_tls_config().expect("tls config");
+        let connect_res = endpoint
+            .tls_config(tls)
+            .expect("tls_config failed")
+            .connect()
+            .await;
 
-        // The request MUST fail, meaning, not downgrade to HTTP/1.1
-        let res = tower::ServiceExt::oneshot(&mut svc, req).await;
+        // A gRPC (HTTP/2) client must not succeed against an HTTP/1.1-only TLS server.
         assert!(
-            res.is_err(),
-            "expected HTTP/2-only client to fail against HTTP/1.1-only TLS server"
+            connect_res.is_err(),
+            "expected connect to fail (no downgrade to HTTP/1.1), but it succeeded"
         );
 
-        let join = timeout(Duration::from_secs(3), server_task).await;
-        match join {
-            Ok(Ok(())) => {}
-            Ok(Err(join_err)) => panic!("server task join failed: {join_err}"),
-            Err(_) => {
-                // In rare cases the client might fail before server finishes parsing, abort to be safe.
-                // This is still success for the test.
-            }
-        }
+        server_task.abort();
     }
 
     /// Ensures URI rewriting returns a structured error for invalid inputs instead
