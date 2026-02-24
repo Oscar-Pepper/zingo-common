@@ -23,7 +23,6 @@ tonic.workspace = true
 
 zcash_client_backend = { workspace = true, features = [
     "lightwalletd-tonic",
-    "orchard",
     "transparent-inputs",
     "tor",
 ] }
