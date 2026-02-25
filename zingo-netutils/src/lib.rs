@@ -23,25 +23,6 @@ pub enum GetClientError {
     Transport(#[from] tonic::transport::Error),
 }
 
-pub mod client {
-    use http_body::Body;
-    use hyper_util::client::legacy::{Client, connect::Connect};
-
-    /// A utility used in multiple places
-    pub fn client_from_connector<C, B>(connector: C, http2_only: bool) -> Box<Client<C, B>>
-    where
-        C: Connect + Clone,
-        B: Body + Send,
-        B::Data: Send,
-    {
-        Box::new(
-            Client::builder(hyper_util::rt::TokioExecutor::new())
-                .http2_only(http2_only)
-                .build(connector),
-        )
-    }
-}
-
 #[cfg(test)]
 fn load_test_cert_pem() -> Option<Vec<u8>> {
     const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";

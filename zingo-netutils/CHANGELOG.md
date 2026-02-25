@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `client` module and `client_from_connector` utility function.
+- `http-body` dependency.
 - `GrpcConnector` struct, `GrpcConnector::new()`, and `GrpcConnector::uri()`.
 - `UnderlyingService` type alias (`BoxCloneService<...>`).
 - Manual URI rewrite logic (scheme/authority injection into requests); now handled

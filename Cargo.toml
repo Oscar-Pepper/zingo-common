@@ -6,7 +6,6 @@ resolver = "2"
 
 # network
 http = "1.1.0"
-http-body = "1"
 hyper-util = "0.1.20"
 hyper = { version = "1" }
 hyper-rustls = { version = "0.27" }
