@@ -1,9 +1,9 @@
 [workspace]
 members = ["zingo_common_components", "zingo-netutils"]
 resolver = "2"
+package.edition = "2024"
 
 [workspace.dependencies]
-
 # network
 http = "1.1.0"
 hyper-util = "0.1.20"
