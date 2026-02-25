@@ -1,6 +1,6 @@
 # zingo-netutils
 
-Network utilities for connecting to Zcash light-wallet indexers (lightwalletd / zebra).
+Network utilities for connecting to Zcash light-wallet indexers (`lightwalletd` / `zainod`).
 
 ## Overview
 
