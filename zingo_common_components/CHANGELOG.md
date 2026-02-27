@@ -11,16 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Exposed `ActivationHeights` network-upgrade heights as public fields:
-  - `overwinter`, `sapling`, `blossom`, `heartwood`, `canopy`, `nu5`, `nu6`, `nu6_1`, `nu7` (`Option<u32>` each).
-
 ### Changed
 
 ### Removed
-
-- Removed the `ActivationHeightsBuilder` API and associated constructors:
-  - `ActivationHeights::builder()`
-  - `ActivationHeightsBuilder` type, its `new()`, `default()`, `build()`, and all `set\_\*` methods (including `Default` impl).
 
 ## [0.3.0] 2026-02-26
 
