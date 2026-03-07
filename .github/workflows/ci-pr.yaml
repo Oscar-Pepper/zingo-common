@@ -45,6 +45,27 @@ jobs:
         with:
           command: check bans
 
+  cargo-nextest:
+    name: Cargo Nextest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Run tests
+        run: cargo nextest run --workspace
+
   cargo-hack-check:
     name: Cargo Hack Check
     runs-on: ubuntu-24.04

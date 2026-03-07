@@ -33,13 +33,13 @@ fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
     #[cfg(test)]
     {
         if let Some(pem) = load_test_cert_pem() {
-            return Ok(
-                ClientTlsConfig::new().ca_certificate(tonic::transport::Certificate::from_pem(pem))
-            );
+            return Ok(ClientTlsConfig::new()
+                .ca_certificate(tonic::transport::Certificate::from_pem(pem))
+                .with_webpki_roots());
         }
     }
 
-    Ok(ClientTlsConfig::new())
+    Ok(ClientTlsConfig::new().with_webpki_roots())
 }
 /// The connector, containing the URI to connect to.
 /// This type is mostly an interface to the `get_client` method.
@@ -405,5 +405,50 @@ mod tests {
         );
 
         server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn connects_to_public_mainnet_indexer_and_gets_info() {
+        use std::time::Duration;
+        use tokio::time::timeout;
+        use tonic::Request;
+        use zcash_client_backend::proto::service::Empty;
+
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let endpoint = "https://zec.rocks:443".to_string();
+
+        let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
+
+        let mut client = timeout(Duration::from_secs(10), get_client(uri))
+            .await
+            .expect("timed out connecting to public indexer")
+            .expect("failed to connect to public indexer");
+
+        let response = timeout(
+            Duration::from_secs(10),
+            client.get_lightd_info(Request::new(Empty {})),
+        )
+        .await
+        .expect("timed out calling GetLightdInfo")
+        .expect("GetLightdInfo RPC failed")
+        .into_inner();
+
+        assert!(
+            !response.chain_name.is_empty(),
+            "chain_name should not be empty"
+        );
+        assert!(
+            response.block_height > 0,
+            "block_height should be > 0, got {}",
+            response.block_height
+        );
+
+        let chain = response.chain_name.to_ascii_lowercase();
+        assert!(
+            chain.contains("main"),
+            "expected a mainnet server, got chain_name={:?}",
+            response.chain_name
+        );
     }
 }
