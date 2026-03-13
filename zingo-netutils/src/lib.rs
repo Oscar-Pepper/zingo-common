@@ -1,12 +1,19 @@
 //! `zingo-netutils`
 //!
-//! This crate provides the `GrpcConnector` struct,
-//! used to communicate with an indexer.
+//! This crate provides the [`Indexer`] trait for communicating with a Zcash chain indexer,
+//! and [`GrpcIndexer`], a concrete implementation that connects to a zainod server via gRPC.
+
+use std::future::Future;
+use std::time::Duration;
 
 #[cfg(test)]
 use tokio_rustls::rustls::RootCertStore;
+use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
+use zcash_client_backend::proto::service::{
+    BlockId, ChainSpec, Empty, LightdInfo, RawTransaction,
+    compact_tx_streamer_client::CompactTxStreamerClient,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GetClientError {
@@ -21,6 +28,9 @@ pub enum GetClientError {
 
     #[error(transparent)]
     Transport(#[from] tonic::transport::Error),
+
+    #[error("no uri: no connection")]
+    NoUri,
 }
 
 #[cfg(test)]
@@ -41,32 +51,127 @@ fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
 
     Ok(ClientTlsConfig::new().with_webpki_roots())
 }
-/// The connector, containing the URI to connect to.
-/// This type is mostly an interface to the `get_client` method.
-/// The proto-generated `CompactTxStreamerClient` type is the main
-/// interface to actually communicating with a Zcash indexer.
-/// Connect to the URI, and return a Client. For the full list of methods
-/// the client supports, see the service.proto file (some of the types
-/// are defined in the `compact_formats.proto` file).
-pub async fn get_client(
-    uri: http::Uri,
-) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
-    let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
-    if scheme != "http" && scheme != "https" {
-        return Err(GetClientError::InvalidScheme);
+
+const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Error type for [`GrpcIndexer`] operations.
+#[derive(Debug, thiserror::Error)]
+pub enum GrpcIndexerError {
+    #[error(transparent)]
+    Client(#[from] GetClientError),
+
+    #[error("gRPC error: {0}")]
+    Status(#[from] tonic::Status),
+
+    #[error("send rejected: {0}")]
+    SendRejected(String),
+}
+
+/// Trait for communicating with a Zcash chain indexer.
+pub trait Indexer {
+    type Error;
+
+    fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::Error>>;
+    fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::Error>>;
+    fn send_transaction(
+        &self,
+        tx_bytes: Box<[u8]>,
+    ) -> impl Future<Output = Result<String, Self::Error>>;
+}
+
+/// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
+#[derive(Clone, Debug)]
+pub struct GrpcIndexer {
+    uri: Option<http::Uri>,
+}
+
+impl GrpcIndexer {
+    pub fn new(uri: http::Uri) -> Self {
+        Self { uri: Some(uri) }
     }
-    let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
 
-    let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+    pub fn disconnected() -> Self {
+        Self { uri: None }
+    }
 
-    let channel = if scheme == "https" {
-        let tls = client_tls_config()?;
-        endpoint.tls_config(tls)?.connect().await?
-    } else {
-        endpoint.connect().await?
-    };
+    pub fn uri(&self) -> Option<&http::Uri> {
+        self.uri.as_ref()
+    }
 
-    Ok(CompactTxStreamerClient::new(channel))
+    pub fn set_uri(&mut self, uri: http::Uri) {
+        self.uri = Some(uri);
+    }
+
+    pub fn disconnect(&mut self) {
+        self.uri = None;
+    }
+
+    /// The connector, containing the URI to connect to.
+    /// This type is mostly an interface to the `get_client` method.
+    /// The proto-generated `CompactTxStreamerClient` type is the main
+    /// interface to actually communicating with a Zcash indexer.
+    /// Connect to the URI, and return a Client. For the full list of methods
+    /// the client supports, see the service.proto file (some of the types
+    /// are defined in the `compact_formats.proto` file).
+    pub async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
+        let uri = self.uri.as_ref().ok_or(GetClientError::NoUri)?;
+        let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
+        if scheme != "http" && scheme != "https" {
+            return Err(GetClientError::InvalidScheme);
+        }
+        let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+
+        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+
+        let channel = if scheme == "https" {
+            let tls = client_tls_config()?;
+            endpoint.tls_config(tls)?.connect().await?
+        } else {
+            endpoint.connect().await?
+        };
+
+        Ok(CompactTxStreamerClient::new(channel))
+    }
+}
+
+impl Indexer for GrpcIndexer {
+    type Error = GrpcIndexerError;
+
+    async fn get_info(&self) -> Result<LightdInfo, GrpcIndexerError> {
+        let mut client = self.get_client().await?;
+        let mut request = Request::new(Empty {});
+        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
+        let response = client.get_lightd_info(request).await?;
+        Ok(response.into_inner())
+    }
+
+    async fn get_latest_block(&self) -> Result<BlockId, GrpcIndexerError> {
+        let mut client = self.get_client().await?;
+        let mut request = Request::new(ChainSpec {});
+        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
+        let response = client.get_latest_block(request).await?;
+        Ok(response.into_inner())
+    }
+
+    async fn send_transaction(&self, tx_bytes: Box<[u8]>) -> Result<String, GrpcIndexerError> {
+        let mut client = self.get_client().await?;
+        let mut request = Request::new(RawTransaction {
+            data: tx_bytes.to_vec(),
+            height: 0,
+        });
+        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
+        let response = client.send_transaction(request).await?;
+        let sendresponse = response.into_inner();
+        if sendresponse.error_code == 0 {
+            let mut transaction_id = sendresponse.error_message;
+            if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
+                transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
+            }
+            Ok(transaction_id)
+        } else {
+            Err(GrpcIndexerError::SendRejected(format!("{sendresponse:?}")))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -339,7 +444,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_non_http_schemes() {
         let uri: http::Uri = "ftp://example.com:1234".parse().unwrap();
-        let res = get_client(uri).await;
+        let res = GrpcIndexer::new(uri).get_client().await;
 
         assert!(
             res.is_err(),
@@ -420,7 +525,7 @@ mod tests {
 
         let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
 
-        let mut client = timeout(Duration::from_secs(10), get_client(uri))
+        let mut client = timeout(Duration::from_secs(10), GrpcIndexer::new(uri).get_client())
             .await
             .expect("timed out connecting to public indexer")
             .expect("failed to connect to public indexer");
