@@ -11,7 +11,7 @@ use tokio_rustls::rustls::RootCertStore;
 use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::proto::service::{
-    BlockId, ChainSpec, Empty, LightdInfo, RawTransaction,
+    BlockId, ChainSpec, Empty, LightdInfo, RawTransaction, TreeState,
     compact_tx_streamer_client::CompactTxStreamerClient,
 };
 
@@ -77,6 +77,7 @@ pub trait Indexer {
         &self,
         tx_bytes: Box<[u8]>,
     ) -> impl Future<Output = Result<String, Self::Error>>;
+    fn get_trees(&self, height: u64) -> impl Future<Output = Result<TreeState, Self::Error>>;
 }
 
 /// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
@@ -171,6 +172,17 @@ impl Indexer for GrpcIndexer {
         } else {
             Err(GrpcIndexerError::SendRejected(format!("{sendresponse:?}")))
         }
+    }
+
+    async fn get_trees(&self, height: u64) -> Result<TreeState, GrpcIndexerError> {
+        let mut client = self.get_client().await?;
+        let response = client
+            .get_tree_state(Request::new(BlockId {
+                height,
+                hash: vec![],
+            }))
+            .await?;
+        Ok(response.into_inner())
     }
 }
 
