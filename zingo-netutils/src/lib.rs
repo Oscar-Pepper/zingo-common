@@ -54,30 +54,63 @@ fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Error type for [`GrpcIndexer`] operations.
+/// Error type for [`GrpcIndexer::get_info`].
 #[derive(Debug, thiserror::Error)]
-pub enum GrpcIndexerError {
+pub enum GetInfoError {
     #[error(transparent)]
-    Client(#[from] GetClientError),
+    GetClientError(#[from] GetClientError),
 
     #[error("gRPC error: {0}")]
-    Status(#[from] tonic::Status),
+    GetLightdInfoError(#[from] tonic::Status),
+}
+
+/// Error type for [`GrpcIndexer::get_latest_block`].
+#[derive(Debug, thiserror::Error)]
+pub enum GetLatestBlockError {
+    #[error(transparent)]
+    GetClientError(#[from] GetClientError),
+
+    #[error("gRPC error: {0}")]
+    GetLatestBlockError(#[from] tonic::Status),
+}
+
+/// Error type for [`GrpcIndexer::send_transaction`].
+#[derive(Debug, thiserror::Error)]
+pub enum SendTransactionError {
+    #[error(transparent)]
+    GetClientError(#[from] GetClientError),
+
+    #[error("gRPC error: {0}")]
+    SendTransactionError(#[from] tonic::Status),
 
     #[error("send rejected: {0}")]
     SendRejected(String),
 }
 
+/// Error type for [`GrpcIndexer::get_trees`].
+#[derive(Debug, thiserror::Error)]
+pub enum GetTreesError {
+    #[error(transparent)]
+    GetClientError(#[from] GetClientError),
+
+    #[error("gRPC error: {0}")]
+    GetTreeStateError(#[from] tonic::Status),
+}
+
 /// Trait for communicating with a Zcash chain indexer.
 pub trait Indexer {
-    type Error;
+    type GetInfoError;
+    type GetLatestBlockError;
+    type SendTransactionError;
+    type GetTreesError;
 
-    fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::Error>>;
-    fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::Error>>;
+    fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::GetInfoError>>;
+    fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::GetLatestBlockError>>;
     fn send_transaction(
         &self,
         tx_bytes: Box<[u8]>,
-    ) -> impl Future<Output = Result<String, Self::Error>>;
-    fn get_trees(&self, height: u64) -> impl Future<Output = Result<TreeState, Self::Error>>;
+    ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
+    fn get_trees(&self, height: u64) -> impl Future<Output = Result<TreeState, Self::GetTreesError>>;
 }
 
 /// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
@@ -136,9 +169,12 @@ impl GrpcIndexer {
 }
 
 impl Indexer for GrpcIndexer {
-    type Error = GrpcIndexerError;
+    type GetInfoError = GetInfoError;
+    type GetLatestBlockError = GetLatestBlockError;
+    type SendTransactionError = SendTransactionError;
+    type GetTreesError = GetTreesError;
 
-    async fn get_info(&self) -> Result<LightdInfo, GrpcIndexerError> {
+    async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
         let mut client = self.get_client().await?;
         let mut request = Request::new(Empty {});
         request.set_timeout(DEFAULT_GRPC_TIMEOUT);
@@ -146,7 +182,7 @@ impl Indexer for GrpcIndexer {
         Ok(response.into_inner())
     }
 
-    async fn get_latest_block(&self) -> Result<BlockId, GrpcIndexerError> {
+    async fn get_latest_block(&self) -> Result<BlockId, GetLatestBlockError> {
         let mut client = self.get_client().await?;
         let mut request = Request::new(ChainSpec {});
         request.set_timeout(DEFAULT_GRPC_TIMEOUT);
@@ -154,7 +190,7 @@ impl Indexer for GrpcIndexer {
         Ok(response.into_inner())
     }
 
-    async fn send_transaction(&self, tx_bytes: Box<[u8]>) -> Result<String, GrpcIndexerError> {
+    async fn send_transaction(&self, tx_bytes: Box<[u8]>) -> Result<String, SendTransactionError> {
         let mut client = self.get_client().await?;
         let mut request = Request::new(RawTransaction {
             data: tx_bytes.to_vec(),
@@ -170,11 +206,11 @@ impl Indexer for GrpcIndexer {
             }
             Ok(transaction_id)
         } else {
-            Err(GrpcIndexerError::SendRejected(format!("{sendresponse:?}")))
+            Err(SendTransactionError::SendRejected(format!("{sendresponse:?}")))
         }
     }
 
-    async fn get_trees(&self, height: u64) -> Result<TreeState, GrpcIndexerError> {
+    async fn get_trees(&self, height: u64) -> Result<TreeState, GetTreesError> {
         let mut client = self.get_client().await?;
         let response = client
             .get_tree_state(Request::new(BlockId {
