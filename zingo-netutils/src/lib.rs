@@ -108,7 +108,10 @@ pub trait Indexer {
         &self,
         tx_bytes: Box<[u8]>,
     ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
-    fn get_trees(&self, height: u64) -> impl Future<Output = Result<TreeState, Self::GetTreesError>>;
+    fn get_trees(
+        &self,
+        height: u64,
+    ) -> impl Future<Output = Result<TreeState, Self::GetTreesError>>;
 }
 
 /// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
@@ -204,7 +207,9 @@ impl Indexer for GrpcIndexer {
             }
             Ok(transaction_id)
         } else {
-            Err(SendTransactionError::SendRejected(format!("{sendresponse:?}")))
+            Err(SendTransactionError::SendRejected(format!(
+                "{sendresponse:?}"
+            )))
         }
     }
 
