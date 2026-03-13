@@ -6,8 +6,6 @@
 use std::future::Future;
 use std::time::Duration;
 
-#[cfg(test)]
-use tokio_rustls::rustls::RootCertStore;
 use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::proto::service::{
@@ -223,27 +221,6 @@ impl Indexer for GrpcIndexer {
 }
 
 #[cfg(test)]
-fn add_test_cert_to_roots(roots: &mut RootCertStore) {
-    use tonic::transport::CertificateDer;
-    eprintln!("Adding test cert to roots");
-
-    const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
-
-    let Ok(fd) = std::fs::File::open(TEST_PEMFILE_PATH) else {
-        eprintln!("Test TLS cert not found at {TEST_PEMFILE_PATH}, skipping");
-        return;
-    };
-
-    let mut buf = std::io::BufReader::new(fd);
-    let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
-        .filter_map(Result::ok)
-        .collect();
-
-    let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
-    roots.add_parsable_certificates(certs);
-}
-
-#[cfg(test)]
 mod tests {
     //! Unit and integration-style tests for `zingo-netutils`.
     //!
@@ -271,6 +248,28 @@ mod tests {
     use tokio_rustls::{TlsAcceptor, rustls};
 
     use super::*;
+
+    use tokio_rustls::rustls::RootCertStore;
+
+    fn add_test_cert_to_roots(roots: &mut RootCertStore) {
+        use tonic::transport::CertificateDer;
+        eprintln!("Adding test cert to roots");
+
+        const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
+
+        let Ok(fd) = std::fs::File::open(TEST_PEMFILE_PATH) else {
+            eprintln!("Test TLS cert not found at {TEST_PEMFILE_PATH}, skipping");
+            return;
+        };
+
+        let mut buf = std::io::BufReader::new(fd);
+        let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
+            .filter_map(Result::ok)
+            .collect();
+
+        let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
+        roots.add_parsable_certificates(certs);
+    }
 
     /// Ensures the committed localhost test certificate exists and is parseable as X.509.
     ///
