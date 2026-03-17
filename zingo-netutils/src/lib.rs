@@ -598,32 +598,15 @@ mod tests {
 
     #[tokio::test]
     async fn connects_to_public_mainnet_indexer_and_gets_info() {
-        use std::time::Duration;
-        use tokio::time::timeout;
-        use tonic::Request;
-        use zcash_client_backend::proto::service::Empty;
-
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let endpoint = "https://zec.rocks:443".to_string();
 
         let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
 
-        let indexer = GrpcIndexer::new(uri).expect("bad URI");
-        let mut client = timeout(Duration::from_secs(10), indexer.get_client())
+        let response = GrpcIndexer::new(uri)
+            .expect("URI to be valid.")
+            .get_info()
             .await
-            .expect("timed out connecting to public indexer")
-            .expect("failed to connect to public indexer");
-
-        let response = timeout(
-            Duration::from_secs(10),
-            client.get_lightd_info(Request::new(Empty {})),
-        )
-        .await
-        .expect("timed out calling GetLightdInfo")
-        .expect("GetLightdInfo RPC failed")
-        .into_inner();
-
+            .expect("to get info");
         assert!(
             !response.chain_name.is_empty(),
             "chain_name should not be empty"
