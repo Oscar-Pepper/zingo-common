@@ -221,6 +221,19 @@ impl Indexer for GrpcIndexer {
 }
 
 #[cfg(test)]
+mod indexer_implementation {
+    use crate::GrpcIndexer;
+
+    mod get_info {
+        #[tokio::test]
+        async fn call_get_info() {
+            todo!()
+            //let grpc_index = GrpcIndexer::new();
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     //! Unit and integration-style tests for `zingo-netutils`.
     //!
