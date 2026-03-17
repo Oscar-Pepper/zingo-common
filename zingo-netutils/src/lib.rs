@@ -31,18 +31,18 @@ pub enum GetClientError {
     NoUri,
 }
 
-fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
+fn client_tls_config() -> ClientTlsConfig {
     // Allow self-signed certs in tests
     #[cfg(test)]
     {
-        return Ok(ClientTlsConfig::new()
+        ClientTlsConfig::new()
             .ca_certificate(tonic::transport::Certificate::from_pem(
                 std::fs::read("test-data/localhost.pem").expect("test file"),
             ))
-            .with_webpki_roots());
+            .with_webpki_roots()
     }
     #[cfg(not(test))]
-    Ok(ClientTlsConfig::new().with_webpki_roots())
+    ClientTlsConfig::new().with_webpki_roots()
 }
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
@@ -154,7 +154,7 @@ impl GrpcIndexer {
         let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
 
         let channel = if scheme == "https" {
-            let tls = client_tls_config()?;
+            let tls = client_tls_config();
             endpoint.tls_config(tls)?.connect().await?
         } else {
             endpoint.connect().await?
@@ -543,9 +543,8 @@ mod tests {
             .expect("endpoint")
             .tcp_nodelay(true);
 
-        let tls = client_tls_config().expect("tls config");
         let connect_res = endpoint
-            .tls_config(tls)
+            .tls_config(client_tls_config())
             .expect("tls_config failed")
             .connect()
             .await;
