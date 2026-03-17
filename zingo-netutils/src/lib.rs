@@ -31,22 +31,17 @@ pub enum GetClientError {
     NoUri,
 }
 
-#[cfg(test)]
-fn load_test_cert_pem() -> Option<Vec<u8>> {
-    const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
-    std::fs::read(TEST_PEMFILE_PATH).ok()
-}
 fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
     // Allow self-signed certs in tests
     #[cfg(test)]
     {
-        if let Some(pem) = load_test_cert_pem() {
-            return Ok(ClientTlsConfig::new()
-                .ca_certificate(tonic::transport::Certificate::from_pem(pem))
-                .with_webpki_roots());
-        }
+        return Ok(ClientTlsConfig::new()
+            .ca_certificate(tonic::transport::Certificate::from_pem(
+                std::fs::read("test-data/localhost.pem").expect("test file"),
+            ))
+            .with_webpki_roots());
     }
-
+    #[cfg(not(test))]
     Ok(ClientTlsConfig::new().with_webpki_roots())
 }
 
