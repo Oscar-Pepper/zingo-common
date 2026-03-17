@@ -219,7 +219,6 @@ impl Indexer for GrpcIndexer {
 
 #[cfg(test)]
 mod indexer_implementation {
-    use crate::GrpcIndexer;
 
     mod get_info {
         #[tokio::test]
@@ -391,8 +390,6 @@ mod tests {
         use tokio_rustls::TlsAcceptor;
         use tokio_rustls::rustls;
 
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
         let addr = listener.local_addr().expect("local_addr failed");
 
@@ -517,8 +514,6 @@ mod tests {
     #[tokio::test]
     async fn https_connector_must_not_downgrade_to_http1() {
         use http_body_util::Full;
-
-        let _ = rustls::crypto::ring::default_provider().install_default();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
         let addr = listener.local_addr().expect("local_addr failed");
