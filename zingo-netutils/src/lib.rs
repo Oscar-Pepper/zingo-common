@@ -21,14 +21,8 @@ pub enum GetClientError {
     #[error("bad uri: invalid authority")]
     InvalidAuthority,
 
-    #[error("bad uri: invalid path and/or query")]
-    InvalidPathAndQuery,
-
     #[error(transparent)]
     Transport(#[from] tonic::transport::Error),
-
-    #[error("no uri: no connection")]
-    NoUri,
 }
 
 fn client_tls_config() -> ClientTlsConfig {
@@ -112,10 +106,10 @@ pub trait Indexer {
 /// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
 #[derive(Clone)]
 pub struct GrpcIndexer {
-    uri: Option<http::Uri>,
-    scheme: Option<String>,
-    authority: Option<http::uri::Authority>,
-    endpoint: Option<Endpoint>,
+    uri: http::Uri,
+    scheme: String,
+    authority: http::uri::Authority,
+    endpoint: Endpoint,
 }
 
 impl std::fmt::Debug for GrpcIndexer {
@@ -149,42 +143,20 @@ impl GrpcIndexer {
         };
 
         Ok(Self {
-            uri: Some(uri),
-            scheme: Some(scheme),
-            authority: Some(authority),
-            endpoint: Some(endpoint),
+            uri,
+            scheme,
+            authority,
+            endpoint,
         })
     }
 
-    pub fn disconnected() -> Self {
-        Self {
-            uri: None,
-            scheme: None,
-            authority: None,
-            endpoint: None,
-        }
-    }
-
-    pub fn uri(&self) -> Option<&http::Uri> {
-        self.uri.as_ref()
-    }
-
-    pub fn set_uri(&mut self, uri: http::Uri) -> Result<(), GetClientError> {
-        *self = Self::new(uri)?;
-        Ok(())
-    }
-
-    pub fn disconnect(&mut self) {
-        self.uri = None;
-        self.scheme = None;
-        self.authority = None;
-        self.endpoint = None;
+    pub fn uri(&self) -> &http::Uri {
+        &self.uri
     }
 
     /// Connect to the pre-configured endpoint and return a gRPC client.
     pub async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
-        let endpoint = self.endpoint.as_ref().ok_or(GetClientError::NoUri)?;
-        let channel = endpoint.connect().await?;
+        let channel = self.endpoint.connect().await?;
         Ok(CompactTxStreamerClient::new(channel))
     }
 }
