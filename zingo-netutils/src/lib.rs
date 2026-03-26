@@ -85,18 +85,35 @@ pub enum GetTreesError {
 }
 
 /// Trait for communicating with a Zcash chain indexer.
+///
+/// Implementors provide access to a lightwalletd-compatible server.
+/// Callers can depend on the following guarantees:
+///
+/// - Each method opens a fresh connection (or reuses a pooled one) — no
+///   persistent session state is assumed between calls.
+/// - Errors are partitioned per method so callers can handle connection
+///   failures separately from server-side errors.
+/// - All methods are safe to call concurrently from multiple tasks.
 pub trait Indexer {
     type GetInfoError;
     type GetLatestBlockError;
     type SendTransactionError;
     type GetTreesError;
 
+    /// Return server metadata (chain name, block height, version, etc.).
     fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::GetInfoError>>;
+
+    /// Return the height and hash of the chain tip.
     fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::GetLatestBlockError>>;
+
+    /// Submit a raw transaction. Returns the txid on success, or a
+    /// rejection reason on failure.
     fn send_transaction(
         &self,
         tx_bytes: Box<[u8]>,
     ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
+
+    /// Fetch the note commitment tree state at the given block height.
     fn get_trees(
         &self,
         height: u64,
