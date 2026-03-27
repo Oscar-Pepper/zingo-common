@@ -19,11 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_taddress_balance_stream` (client-streaming via `Vec<Address>`),
   `get_address_utxos`, `get_address_utxos_stream`.
 - `Indexer::ping()` method for server latency testing.
-- Per-method associated error types on the `Indexer` trait, all bounded
-  by `std::error::Error`.
-- `RpcError` common error type for methods with no additional failure modes.
-- Single `TransparentError` associated type shared by all
-  `TransparentIndexer` methods.
+- Per-method error enums for every trait method (`src/error.rs`), each
+  with `GetClientError` (connection) and a method-specific `tonic::Status`
+  variant. `SendTransactionError` adds `SendRejected`. All bounded by
+  `std::error::Error`.
+- `TransparentIndexer` per-method error enums in `error::transparent`
+  submodule (gated by `globally-public-transparent`).
+- Unit test suite for every error enum variant (`error::tests`,
+  `error::transparent::tests`).
 - `GrpcIndexer` struct implementing `Indexer` (and `TransparentIndexer`)
   over gRPC. Validates URI at construction (`new` returns `Result`) and
   pre-builds the TLS endpoint.

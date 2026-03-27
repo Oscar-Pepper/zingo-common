@@ -13,7 +13,8 @@ use lightwallet_protocol::{
     GetAddressUtxosReplyList, RawTransaction, TransparentAddressBlockFilter,
 };
 
-use super::{GrpcIndexer, Indexer, RpcError};
+pub use super::error::transparent::*;
+use super::{GrpcIndexer, Indexer};
 
 /// Extension of [`Indexer`] for transparent address operations.
 ///
@@ -22,10 +23,15 @@ use super::{GrpcIndexer, Indexer, RpcError};
 ///
 /// - Balance and UTXO results reflect only confirmed (mined) state.
 /// - Streaming results are sorted by block height.
-/// - All methods share a single [`TransparentError`](TransparentIndexer::TransparentError)
-///   type covering both connection and server errors.
+/// - Errors are partitioned per method so callers can distinguish
+///   which operation failed.
 pub trait TransparentIndexer: Indexer {
-    type TransparentError: std::error::Error;
+    type GetTaddressTxidsError: std::error::Error;
+    type GetTaddressTransactionsError: std::error::Error;
+    type GetTaddressBalanceError: std::error::Error;
+    type GetTaddressBalanceStreamError: std::error::Error;
+    type GetAddressUtxosError: std::error::Error;
+    type GetAddressUtxosStreamError: std::error::Error;
 
     /// Return a stream of transactions for a transparent address in a block range.
     ///
@@ -36,7 +42,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_txids(
         &self,
         filter: TransparentAddressBlockFilter,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::TransparentError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTxidsError>>;
 
     /// Return a stream of transactions for a transparent address in a block range.
     ///
@@ -44,7 +50,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_transactions(
         &self,
         filter: TransparentAddressBlockFilter,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::TransparentError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTransactionsError>>;
 
     /// Return the total confirmed balance for the given transparent addresses.
     ///
@@ -53,7 +59,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_balance(
         &self,
         addresses: AddressList,
-    ) -> impl Future<Output = Result<Balance, Self::TransparentError>>;
+    ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceError>>;
 
     /// Return the total confirmed balance by streaming addresses to the server.
     ///
@@ -64,7 +70,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_balance_stream(
         &self,
         addresses: Vec<Address>,
-    ) -> impl Future<Output = Result<Balance, Self::TransparentError>>;
+    ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceStreamError>>;
 
     /// Return UTXOs for the given addresses as a single response.
     ///
@@ -73,7 +79,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_address_utxos(
         &self,
         arg: GetAddressUtxosArg,
-    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, Self::TransparentError>>;
+    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, Self::GetAddressUtxosError>>;
 
     /// Return a stream of UTXOs for the given addresses.
     ///
@@ -82,17 +88,24 @@ pub trait TransparentIndexer: Indexer {
     fn get_address_utxos_stream(
         &self,
         arg: GetAddressUtxosArg,
-    ) -> impl Future<Output = Result<tonic::Streaming<GetAddressUtxosReply>, Self::TransparentError>>;
+    ) -> impl Future<
+        Output = Result<tonic::Streaming<GetAddressUtxosReply>, Self::GetAddressUtxosStreamError>,
+    >;
 }
 
 impl TransparentIndexer for GrpcIndexer {
-    type TransparentError = RpcError;
+    type GetTaddressTxidsError = GetTaddressTxidsError;
+    type GetTaddressTransactionsError = GetTaddressTransactionsError;
+    type GetTaddressBalanceError = GetTaddressBalanceError;
+    type GetTaddressBalanceStreamError = GetTaddressBalanceStreamError;
+    type GetAddressUtxosError = GetAddressUtxosError;
+    type GetAddressUtxosStreamError = GetAddressUtxosStreamError;
 
     #[allow(deprecated)]
     async fn get_taddress_txids(
         &self,
         filter: TransparentAddressBlockFilter,
-    ) -> Result<tonic::Streaming<RawTransaction>, RpcError> {
+    ) -> Result<tonic::Streaming<RawTransaction>, GetTaddressTxidsError> {
         let (mut client, request) = self.stream_call(filter).await?;
         Ok(client.get_taddress_txids(request).await?.into_inner())
     }
@@ -100,7 +113,7 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_taddress_transactions(
         &self,
         filter: TransparentAddressBlockFilter,
-    ) -> Result<tonic::Streaming<RawTransaction>, RpcError> {
+    ) -> Result<tonic::Streaming<RawTransaction>, GetTaddressTransactionsError> {
         let (mut client, request) = self.stream_call(filter).await?;
         Ok(client
             .get_taddress_transactions(request)
@@ -108,7 +121,10 @@ impl TransparentIndexer for GrpcIndexer {
             .into_inner())
     }
 
-    async fn get_taddress_balance(&self, addresses: AddressList) -> Result<Balance, RpcError> {
+    async fn get_taddress_balance(
+        &self,
+        addresses: AddressList,
+    ) -> Result<Balance, GetTaddressBalanceError> {
         let (mut client, request) = self.time_boxed_call(addresses).await?;
         Ok(client.get_taddress_balance(request).await?.into_inner())
     }
@@ -116,7 +132,7 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_taddress_balance_stream(
         &self,
         addresses: Vec<Address>,
-    ) -> Result<Balance, RpcError> {
+    ) -> Result<Balance, GetTaddressBalanceStreamError> {
         let mut client = self.get_client().await?;
         let stream = tokio_stream::iter(addresses);
         Ok(client
@@ -128,7 +144,7 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_address_utxos(
         &self,
         arg: GetAddressUtxosArg,
-    ) -> Result<GetAddressUtxosReplyList, RpcError> {
+    ) -> Result<GetAddressUtxosReplyList, GetAddressUtxosError> {
         let (mut client, request) = self.time_boxed_call(arg).await?;
         Ok(client.get_address_utxos(request).await?.into_inner())
     }
@@ -136,7 +152,7 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_address_utxos_stream(
         &self,
         arg: GetAddressUtxosArg,
-    ) -> Result<tonic::Streaming<GetAddressUtxosReply>, RpcError> {
+    ) -> Result<tonic::Streaming<GetAddressUtxosReply>, GetAddressUtxosStreamError> {
         let (mut client, request) = self.stream_call(arg).await?;
         Ok(client.get_address_utxos_stream(request).await?.into_inner())
     }

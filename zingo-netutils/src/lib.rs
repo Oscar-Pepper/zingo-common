@@ -20,22 +20,13 @@ use lightwallet_protocol::{
 #[cfg(feature = "ping-very-insecure")]
 use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
+pub mod error;
+pub use error::*;
+
 #[cfg(feature = "globally-public-transparent")]
 mod globally_public;
 #[cfg(feature = "globally-public-transparent")]
 pub use globally_public::TransparentIndexer;
-
-#[derive(Debug, thiserror::Error)]
-pub enum GetClientError {
-    #[error("bad uri: invalid scheme")]
-    InvalidScheme,
-
-    #[error("bad uri: invalid authority")]
-    InvalidAuthority,
-
-    #[error(transparent)]
-    Transport(#[from] tonic::transport::Error),
-}
 
 fn client_tls_config() -> ClientTlsConfig {
     // Allow self-signed certs in tests
@@ -52,62 +43,6 @@ fn client_tls_config() -> ClientTlsConfig {
 }
 
 const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Error type for [`GrpcIndexer::get_info`].
-#[derive(Debug, thiserror::Error)]
-pub enum GetInfoError {
-    #[error(transparent)]
-    GetClientError(#[from] GetClientError),
-
-    #[error("gRPC error: {0}")]
-    GetLightdInfoError(#[from] tonic::Status),
-}
-
-/// Error type for [`GrpcIndexer::get_latest_block`].
-#[derive(Debug, thiserror::Error)]
-pub enum GetLatestBlockError {
-    #[error(transparent)]
-    GetClientError(#[from] GetClientError),
-
-    #[error("gRPC error: {0}")]
-    GetLatestBlockError(#[from] tonic::Status),
-}
-
-/// Error type for [`GrpcIndexer::send_transaction`].
-#[derive(Debug, thiserror::Error)]
-pub enum SendTransactionError {
-    #[error(transparent)]
-    GetClientError(#[from] GetClientError),
-
-    #[error("gRPC error: {0}")]
-    SendTransactionError(#[from] tonic::Status),
-
-    #[error("send rejected: {0}")]
-    SendRejected(String),
-}
-
-/// Error type for [`GrpcIndexer::get_tree_state`].
-#[derive(Debug, thiserror::Error)]
-pub enum GetTreeStateError {
-    #[error(transparent)]
-    GetClientError(#[from] GetClientError),
-
-    #[error("gRPC error: {0}")]
-    GetTreeStateError(#[from] tonic::Status),
-}
-
-/// Common error type for gRPC calls that only fail on connection or status.
-///
-/// Used by [`GrpcIndexer`] for trait methods that have no additional failure modes
-/// beyond establishing a connection and receiving a gRPC response.
-#[derive(Debug, thiserror::Error)]
-pub enum RpcError {
-    #[error(transparent)]
-    GetClientError(#[from] GetClientError),
-
-    #[error("gRPC error: {0}")]
-    Status(#[from] tonic::Status),
-}
 
 /// Trait for communicating with a Zcash chain indexer.
 ///
@@ -374,17 +309,17 @@ impl Indexer for GrpcIndexer {
     type GetLatestBlockError = GetLatestBlockError;
     type SendTransactionError = SendTransactionError;
     type GetTreeStateError = GetTreeStateError;
-    type GetBlockError = RpcError;
-    type GetBlockNullifiersError = RpcError;
-    type GetBlockRangeError = RpcError;
-    type GetBlockRangeNullifiersError = RpcError;
-    type GetTransactionError = RpcError;
-    type GetMempoolTxError = RpcError;
-    type GetMempoolStreamError = RpcError;
-    type GetLatestTreeStateError = RpcError;
-    type GetSubtreeRootsError = RpcError;
+    type GetBlockError = GetBlockError;
+    type GetBlockNullifiersError = GetBlockNullifiersError;
+    type GetBlockRangeError = GetBlockRangeError;
+    type GetBlockRangeNullifiersError = GetBlockRangeNullifiersError;
+    type GetTransactionError = GetTransactionError;
+    type GetMempoolTxError = GetMempoolTxError;
+    type GetMempoolStreamError = GetMempoolStreamError;
+    type GetLatestTreeStateError = GetLatestTreeStateError;
+    type GetSubtreeRootsError = GetSubtreeRootsError;
     #[cfg(feature = "ping-very-insecure")]
-    type PingError = RpcError;
+    type PingError = PingError;
 
     async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
         let (mut client, request) = self.time_boxed_call(Empty {}).await?;
@@ -422,13 +357,16 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_tree_state(request).await?.into_inner())
     }
 
-    async fn get_block(&self, block_id: BlockId) -> Result<CompactBlock, RpcError> {
+    async fn get_block(&self, block_id: BlockId) -> Result<CompactBlock, GetBlockError> {
         let (mut client, request) = self.time_boxed_call(block_id).await?;
         Ok(client.get_block(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
-    async fn get_block_nullifiers(&self, block_id: BlockId) -> Result<CompactBlock, RpcError> {
+    async fn get_block_nullifiers(
+        &self,
+        block_id: BlockId,
+    ) -> Result<CompactBlock, GetBlockNullifiersError> {
         let (mut client, request) = self.time_boxed_call(block_id).await?;
         Ok(client.get_block_nullifiers(request).await?.into_inner())
     }
@@ -436,7 +374,7 @@ impl Indexer for GrpcIndexer {
     async fn get_block_range(
         &self,
         range: BlockRange,
-    ) -> Result<tonic::Streaming<CompactBlock>, RpcError> {
+    ) -> Result<tonic::Streaming<CompactBlock>, GetBlockRangeError> {
         let (mut client, request) = self.stream_call(range).await?;
         Ok(client.get_block_range(request).await?.into_inner())
     }
@@ -445,7 +383,7 @@ impl Indexer for GrpcIndexer {
     async fn get_block_range_nullifiers(
         &self,
         range: BlockRange,
-    ) -> Result<tonic::Streaming<CompactBlock>, RpcError> {
+    ) -> Result<tonic::Streaming<CompactBlock>, GetBlockRangeNullifiersError> {
         let (mut client, request) = self.stream_call(range).await?;
         Ok(client
             .get_block_range_nullifiers(request)
@@ -453,7 +391,10 @@ impl Indexer for GrpcIndexer {
             .into_inner())
     }
 
-    async fn get_transaction(&self, filter: TxFilter) -> Result<RawTransaction, RpcError> {
+    async fn get_transaction(
+        &self,
+        filter: TxFilter,
+    ) -> Result<RawTransaction, GetTransactionError> {
         let (mut client, request) = self.time_boxed_call(filter).await?;
         Ok(client.get_transaction(request).await?.into_inner())
     }
@@ -461,17 +402,19 @@ impl Indexer for GrpcIndexer {
     async fn get_mempool_tx(
         &self,
         request: GetMempoolTxRequest,
-    ) -> Result<tonic::Streaming<CompactTx>, RpcError> {
+    ) -> Result<tonic::Streaming<CompactTx>, GetMempoolTxError> {
         let (mut client, request) = self.stream_call(request).await?;
         Ok(client.get_mempool_tx(request).await?.into_inner())
     }
 
-    async fn get_mempool_stream(&self) -> Result<tonic::Streaming<RawTransaction>, RpcError> {
+    async fn get_mempool_stream(
+        &self,
+    ) -> Result<tonic::Streaming<RawTransaction>, GetMempoolStreamError> {
         let (mut client, request) = self.stream_call(Empty {}).await?;
         Ok(client.get_mempool_stream(request).await?.into_inner())
     }
 
-    async fn get_latest_tree_state(&self) -> Result<TreeState, RpcError> {
+    async fn get_latest_tree_state(&self) -> Result<TreeState, GetLatestTreeStateError> {
         let (mut client, request) = self.time_boxed_call(Empty {}).await?;
         Ok(client.get_latest_tree_state(request).await?.into_inner())
     }
@@ -479,13 +422,13 @@ impl Indexer for GrpcIndexer {
     async fn get_subtree_roots(
         &self,
         arg: GetSubtreeRootsArg,
-    ) -> Result<tonic::Streaming<SubtreeRoot>, RpcError> {
+    ) -> Result<tonic::Streaming<SubtreeRoot>, GetSubtreeRootsError> {
         let (mut client, request) = self.stream_call(arg).await?;
         Ok(client.get_subtree_roots(request).await?.into_inner())
     }
 
     #[cfg(feature = "ping-very-insecure")]
-    async fn ping(&self, duration: ProtoDuration) -> Result<PingResponse, RpcError> {
+    async fn ping(&self, duration: ProtoDuration) -> Result<PingResponse, PingError> {
         let (mut client, request) = self.time_boxed_call(duration).await?;
         Ok(client.ping(request).await?.into_inner())
     }

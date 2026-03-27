@@ -64,22 +64,45 @@ All features are **off by default**.
 
 ## Error handling
 
-Errors are partitioned per trait method so callers can handle connection
-failures separately from server-side errors. The original four methods
-(`get_info`, `get_latest_block`, `send_transaction`, `get_tree_state`)
-have dedicated error enums. All other `Indexer` methods use `RpcError`.
-`TransparentIndexer` methods share a single `TransparentError` associated
-type. All error types are bounded by `std::error::Error`.
+Every trait method has a dedicated error enum (defined in `src/error.rs`).
+Each enum has two variants:
+
+- `GetClientError(GetClientError)` — the connection was never established.
+  `InvalidScheme` and `InvalidAuthority` are deterministic; `Transport`
+  may be transient and retryable.
+- A method-specific gRPC variant wrapping `tonic::Status` — the server
+  received the request but returned an error.
+
+`SendTransactionError` adds a third variant, `SendRejected(String)`, for
+transactions the server evaluated and rejected (not retryable with the
+same bytes).
+
+All error types are bounded by `std::error::Error`. Transparent method
+errors live in `error::transparent` (gated by `globally-public-transparent`).
 
 | Error type | Used by |
 |---|---|
-| `GetClientError` | `GrpcIndexer::new`, `get_client`, connection phase of all methods |
+| `GetClientError` | `GrpcIndexer::new`, `get_client`, embedded in every method error |
 | `GetInfoError` | `get_info` |
 | `GetLatestBlockError` | `get_latest_block` |
-| `SendTransactionError` | `send_transaction` (includes `SendRejected` variant) |
+| `SendTransactionError` | `send_transaction` |
 | `GetTreeStateError` | `get_tree_state` |
-| `RpcError` | all other `Indexer` methods |
-| `TransparentError` (associated) | all `TransparentIndexer` methods |
+| `GetBlockError` | `get_block` |
+| `GetBlockNullifiersError` | `get_block_nullifiers` |
+| `GetBlockRangeError` | `get_block_range` |
+| `GetBlockRangeNullifiersError` | `get_block_range_nullifiers` |
+| `GetTransactionError` | `get_transaction` |
+| `GetMempoolTxError` | `get_mempool_tx` |
+| `GetMempoolStreamError` | `get_mempool_stream` |
+| `GetLatestTreeStateError` | `get_latest_tree_state` |
+| `GetSubtreeRootsError` | `get_subtree_roots` |
+| `PingError` | `ping` |
+| `GetTaddressTxidsError` | `get_taddress_txids` |
+| `GetTaddressTransactionsError` | `get_taddress_transactions` |
+| `GetTaddressBalanceError` | `get_taddress_balance` |
+| `GetTaddressBalanceStreamError` | `get_taddress_balance_stream` |
+| `GetAddressUtxosError` | `get_address_utxos` |
+| `GetAddressUtxosStreamError` | `get_address_utxos_stream` |
 
 ## TLS
 
