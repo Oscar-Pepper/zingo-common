@@ -13,24 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_info`, `get_latest_block`, `send_transaction`, `get_tree_state`,
   `get_block`, `get_block_range`, `get_transaction`, `get_mempool_tx`,
   `get_mempool_stream`, `get_latest_tree_state`, `get_subtree_roots`.
-- Per-method associated error types on the `Indexer` trait.
+- `TransparentIndexer: Indexer` sub-trait in `src/globally_public.rs`
+  for transparent address methods: `get_taddress_txids` (deprecated),
+  `get_taddress_transactions`, `get_taddress_balance`,
+  `get_taddress_balance_stream` (client-streaming via `Vec<Address>`),
+  `get_address_utxos`, `get_address_utxos_stream`.
+- `Indexer::ping()` method for server latency testing.
+- Per-method associated error types on the `Indexer` trait, all bounded
+  by `std::error::Error`.
 - `RpcError` common error type for methods with no additional failure modes.
-- `GrpcIndexer` struct implementing `Indexer` over gRPC. Validates URI at
-  construction (`new` returns `Result`) and pre-builds the TLS endpoint.
+- Single `TransparentError` associated type shared by all
+  `TransparentIndexer` methods.
+- `GrpcIndexer` struct implementing `Indexer` (and `TransparentIndexer`)
+  over gRPC. Validates URI at construction (`new` returns `Result`) and
+  pre-builds the TLS endpoint.
 - `get_client` inherent method on `GrpcIndexer` returning
   `CompactTxStreamerClient<Channel>` from `lightwallet_protocol`.
 - `pub use lightwallet_protocol` re-export so consumers can access proto
   types via `zingo_netutils::lightwallet_protocol::*`.
-- `globally-public-transparent` feature gate (off by default) for
-  transparent address methods: `get_taddress_txids` (deprecated),
-  `get_taddress_transactions`, `get_taddress_balance`,
-  `get_taddress_balance_stream`, `get_address_utxos`,
-  `get_address_utxos_stream`.
-- `back_compatible` feature gate (off by default) providing
-  `get_zcb_client()` which returns `zcash_client_backend`'s
-  `CompactTxStreamerClient<Channel>` for pepper-sync compatibility.
-- Deprecated trait methods: `get_block_nullifiers`, `get_block_range_nullifiers`,
-  `get_taddress_txids`.
+- Feature gates (all off by default):
+  - `globally-public-transparent` — `TransparentIndexer` sub-trait and
+    `GrpcIndexer` implementation. Pulls in `tokio-stream`.
+  - `ping-very-insecure` — `Indexer::ping()`. Name mirrors the
+    lightwalletd `--ping-very-insecure` CLI flag required server-side.
+  - `back_compatible` — `GrpcIndexer::get_zcb_client()` returning
+    `zcash_client_backend`'s `CompactTxStreamerClient<Channel>` for
+    pepper-sync compatibility.
+- Deprecated trait methods: `get_block_nullifiers`,
+  `get_block_range_nullifiers`, `get_taddress_txids`.
+- Compile-time proto agreement tests (`src/proto_agreement.rs`): 20
+  dead-code async functions that reference both the generated client
+  method and the trait method with explicit type annotations. If either
+  side drifts, compilation fails.
+- Integration test `get_block_range_supports_descending_order` verifying
+  descending block range ordering against a public indexer.
 
 ### Changed
 
@@ -40,19 +56,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (validates scheme and authority at construction).
 - **Breaking:** `uri()` returns `&http::Uri` (not `Option`).
 - **Breaking:** Per-method error types (`GetInfoError`, `GetLatestBlockError`,
-  `SendTransactionError`, `GetTreesError`) replace the single `GrpcIndexerError`.
-- **Breaking:** Renamed `get_trees` to `get_tree_state`.
+  `SendTransactionError`, `GetTreeStateError`) replace the single
+  `GrpcIndexerError`.
+- **Breaking:** Renamed `get_trees` to `get_tree_state`; now takes
+  `BlockId` instead of `u64`, matching the proto (`GetTreeState(BlockID)`).
+- **Breaking:** Renamed `GetTreesError` to `GetTreeStateError`.
+- `get_block_range` documents both ascending (`start <= end`) and
+  descending (`start > end`) ordering per the proto spec.
 - Bump `tonic` to `0.14`, `lightwallet-protocol` to `0.3`.
-- `hyper`, `hyper-rustls`, `hyper-util` moved from dependencies to dev-dependencies.
+- `hyper`, `hyper-rustls`, `hyper-util` moved from dependencies to
+  dev-dependencies.
 
 ### Removed
 
-- `zcash_client_backend` dependency (available optionally via `back_compatible`).
+- `zcash_client_backend` dependency (available optionally via
+  `back_compatible`).
 - `set_uri`, `disconnect`, `disconnected` methods.
 - `GrpcIndexerError` unified error type.
 - `GetClientError::NoUri` variant.
 - `Option<http::Uri>` internal state — `GrpcIndexer` always holds a valid URI.
-- `client` module, `GrpcConnector`, `UnderlyingService`, free `get_client` function.
+- `client` module, `GrpcConnector`, `UnderlyingService`, free `get_client`
+  function.
 - Direct dependencies on `tower`, `webpki-roots`, `zebra-chain`.
 
 ## [1.1.0]
