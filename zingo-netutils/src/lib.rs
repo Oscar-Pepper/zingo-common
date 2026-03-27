@@ -9,11 +9,13 @@ use std::time::Duration;
 use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
-use lightwallet_protocol::CompactTxStreamerClient;
+pub use lightwallet_protocol;
+
 use lightwallet_protocol::{
-    AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Empty, Exclude,
-    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetSubtreeRootsArg,
-    LightdInfo, RawTransaction, SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
+    AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
+    CompactTxStreamerClient, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply,
+    GetAddressUtxosReplyList, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot,
+    TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 
 #[derive(Debug, thiserror::Error)]
