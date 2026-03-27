@@ -359,6 +359,26 @@ impl GrpcIndexer {
     }
 }
 
+#[cfg(feature = "back_compatible")]
+impl GrpcIndexer {
+    /// Return a gRPC client using `zcash_client_backend`'s generated types,
+    /// for compatibility with code that expects that crate's
+    /// `CompactTxStreamerClient` (e.g. pepper-sync).
+    pub async fn get_zcb_client(
+        &self,
+    ) -> Result<
+        zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
+            Channel,
+        >,
+        GetClientError,
+    > {
+        let channel = self.endpoint.connect().await?;
+        Ok(
+            zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(channel),
+        )
+    }
+}
+
 impl Indexer for GrpcIndexer {
     type GetInfoError = GetInfoError;
     type GetLatestBlockError = GetLatestBlockError;
