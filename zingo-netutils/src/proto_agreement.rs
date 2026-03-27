@@ -194,7 +194,7 @@ async fn get_subtree_roots(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcInd
         max_entries: 0,
     };
     let _p: tonic::Streaming<SubtreeRoot> = c
-        .get_subtree_roots(Request::new(arg.clone()))
+        .get_subtree_roots(Request::new(arg))
         .await
         .unwrap()
         .into_inner();
@@ -206,11 +206,7 @@ async fn get_subtree_roots(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcInd
 #[cfg(feature = "ping-very-insecure")]
 async fn ping(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
     let dur = ProtoDuration { interval_us: 0 };
-    let _p: PingResponse = c
-        .ping(Request::new(dur.clone()))
-        .await
-        .unwrap()
-        .into_inner();
+    let _p: PingResponse = c.ping(Request::new(dur)).await.unwrap().into_inner();
     let _t: PingResponse = i.ping(dur).await.unwrap();
 }
 
