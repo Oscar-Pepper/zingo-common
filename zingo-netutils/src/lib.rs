@@ -192,9 +192,13 @@ pub trait Indexer {
 
     /// Return a stream of consecutive compact blocks for the given range.
     ///
-    /// Both endpoints of the range are inclusive. The stream yields blocks
-    /// in ascending height order. Callers must consume or drop the stream
-    /// before the connection is reused.
+    /// Both endpoints of the range are inclusive. If `start <= end`, blocks
+    /// are yielded in ascending height order; if `start > end`, blocks are
+    /// yielded in descending height order. See the test
+    /// `tests::get_block_range_supports_descending_order` for a live
+    /// verification of descending order against a public indexer.
+    ///
+    /// Callers must consume or drop the stream before the connection is reused.
     fn get_block_range(
         &self,
         range: BlockRange,
@@ -873,8 +877,14 @@ mod tests {
 
         // start > end → proto says descending order
         let range = BlockRange {
-            start: Some(BlockId { height: start_height, hash: vec![] }),
-            end: Some(BlockId { height: end_height, hash: vec![] }),
+            start: Some(BlockId {
+                height: start_height,
+                hash: vec![],
+            }),
+            end: Some(BlockId {
+                height: end_height,
+                hash: vec![],
+            }),
             pool_types: vec![],
         };
 
