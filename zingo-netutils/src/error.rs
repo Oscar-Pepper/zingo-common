@@ -13,6 +13,19 @@
 ///   with the same URI will always fail.
 /// - `Transport` wraps a [`tonic::transport::Error`] and may be transient
 ///   (e.g. DNS resolution, TCP connect timeout). Retrying may succeed.
+///
+/// ```
+/// use zingo_netutils::GetClientError;
+///
+/// let e = GetClientError::InvalidScheme;
+/// assert_eq!(e.to_string(), "bad uri: invalid scheme");
+///
+/// let e = GetClientError::InvalidAuthority;
+/// assert_eq!(e.to_string(), "bad uri: invalid authority");
+///
+/// // Transport variant accepts From<tonic::transport::Error>
+/// let _: fn(tonic::transport::Error) -> GetClientError = GetClientError::from;
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetClientError {
     #[error("bad uri: invalid scheme")]
@@ -56,6 +69,17 @@ mod get_client_error_tests {
 /// - `GetClientError` means the connection was never established.
 /// - `GetLightdInfoError` means the server received the request but
 ///   returned a gRPC status (e.g. `Unavailable`, `Internal`).
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetInfoError};
+///
+/// let e = GetInfoError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetInfoError::GetClientError(_)));
+///
+/// let e = GetInfoError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetInfoError::GetLightdInfoError(_)));
+/// assert!(e.to_string().contains("oops"));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoError {
     #[error(transparent)]
@@ -70,6 +94,16 @@ pub enum GetInfoError {
 /// Callers can depend on:
 /// - `GetClientError` means the connection was never established.
 /// - `GetLatestBlockError` means the server returned a gRPC status.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetLatestBlockError};
+///
+/// let e = GetLatestBlockError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetLatestBlockError::GetClientError(_)));
+///
+/// let e = GetLatestBlockError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetLatestBlockError::GetLatestBlockError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetLatestBlockError {
     #[error(transparent)]
@@ -89,6 +123,20 @@ pub enum GetLatestBlockError {
 ///   transaction but rejected it (e.g. duplicate, invalid). The string
 ///   contains the server's rejection reason. This is **not** retryable
 ///   with the same transaction bytes.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, SendTransactionError};
+///
+/// let e = SendTransactionError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, SendTransactionError::GetClientError(_)));
+///
+/// let e = SendTransactionError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, SendTransactionError::SendTransactionError(_)));
+///
+/// let e = SendTransactionError::SendRejected("duplicate".into());
+/// assert!(matches!(e, SendTransactionError::SendRejected(_)));
+/// assert_eq!(e.to_string(), "send rejected: duplicate");
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum SendTransactionError {
     #[error(transparent)]
@@ -107,6 +155,16 @@ pub enum SendTransactionError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetTreeStateError` means the server returned a gRPC status
 ///   (e.g. the requested block does not exist).
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetTreeStateError};
+///
+/// let e = GetTreeStateError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetTreeStateError::GetClientError(_)));
+///
+/// let e = GetTreeStateError::from(tonic::Status::not_found("no such block"));
+/// assert!(matches!(e, GetTreeStateError::GetTreeStateError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetTreeStateError {
     #[error(transparent)]
@@ -122,6 +180,16 @@ pub enum GetTreeStateError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetBlockError` means the server returned a gRPC status
 ///   (e.g. the requested block does not exist).
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetBlockError};
+///
+/// let e = GetBlockError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetBlockError::GetClientError(_)));
+///
+/// let e = GetBlockError::from(tonic::Status::not_found("no such block"));
+/// assert!(matches!(e, GetBlockError::GetBlockError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetBlockError {
     #[error(transparent)]
@@ -136,6 +204,16 @@ pub enum GetBlockError {
 /// Callers can depend on:
 /// - `GetClientError` means the connection was never established.
 /// - `GetBlockNullifiersError` means the server returned a gRPC status.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetBlockNullifiersError};
+///
+/// let e = GetBlockNullifiersError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetBlockNullifiersError::GetClientError(_)));
+///
+/// let e = GetBlockNullifiersError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetBlockNullifiersError::GetBlockNullifiersError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetBlockNullifiersError {
     #[error(transparent)]
@@ -151,6 +229,16 @@ pub enum GetBlockNullifiersError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetBlockRangeError` means the server returned a gRPC status
 ///   before or instead of streaming blocks.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetBlockRangeError};
+///
+/// let e = GetBlockRangeError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetBlockRangeError::GetClientError(_)));
+///
+/// let e = GetBlockRangeError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetBlockRangeError::GetBlockRangeError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetBlockRangeError {
     #[error(transparent)]
@@ -165,6 +253,16 @@ pub enum GetBlockRangeError {
 /// Callers can depend on:
 /// - `GetClientError` means the connection was never established.
 /// - `GetBlockRangeNullifiersError` means the server returned a gRPC status.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetBlockRangeNullifiersError};
+///
+/// let e = GetBlockRangeNullifiersError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetBlockRangeNullifiersError::GetClientError(_)));
+///
+/// let e = GetBlockRangeNullifiersError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetBlockRangeNullifiersError::GetBlockRangeNullifiersError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetBlockRangeNullifiersError {
     #[error(transparent)]
@@ -180,6 +278,16 @@ pub enum GetBlockRangeNullifiersError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetTransactionError` means the server returned a gRPC status
 ///   (e.g. the transaction was not found).
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetTransactionError};
+///
+/// let e = GetTransactionError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetTransactionError::GetClientError(_)));
+///
+/// let e = GetTransactionError::from(tonic::Status::not_found("no such tx"));
+/// assert!(matches!(e, GetTransactionError::GetTransactionError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetTransactionError {
     #[error(transparent)]
@@ -195,6 +303,16 @@ pub enum GetTransactionError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetMempoolTxError` means the server returned a gRPC status
 ///   before or instead of streaming mempool transactions.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetMempoolTxError};
+///
+/// let e = GetMempoolTxError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetMempoolTxError::GetClientError(_)));
+///
+/// let e = GetMempoolTxError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetMempoolTxError::GetMempoolTxError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetMempoolTxError {
     #[error(transparent)]
@@ -210,6 +328,16 @@ pub enum GetMempoolTxError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetMempoolStreamError` means the server returned a gRPC status
 ///   before or instead of opening the stream.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetMempoolStreamError};
+///
+/// let e = GetMempoolStreamError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetMempoolStreamError::GetClientError(_)));
+///
+/// let e = GetMempoolStreamError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetMempoolStreamError::GetMempoolStreamError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetMempoolStreamError {
     #[error(transparent)]
@@ -224,6 +352,16 @@ pub enum GetMempoolStreamError {
 /// Callers can depend on:
 /// - `GetClientError` means the connection was never established.
 /// - `GetLatestTreeStateError` means the server returned a gRPC status.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetLatestTreeStateError};
+///
+/// let e = GetLatestTreeStateError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetLatestTreeStateError::GetClientError(_)));
+///
+/// let e = GetLatestTreeStateError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetLatestTreeStateError::GetLatestTreeStateError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetLatestTreeStateError {
     #[error(transparent)]
@@ -239,6 +377,16 @@ pub enum GetLatestTreeStateError {
 /// - `GetClientError` means the connection was never established.
 /// - `GetSubtreeRootsError` means the server returned a gRPC status
 ///   before or instead of streaming subtree roots.
+///
+/// ```
+/// use zingo_netutils::{GetClientError, GetSubtreeRootsError};
+///
+/// let e = GetSubtreeRootsError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, GetSubtreeRootsError::GetClientError(_)));
+///
+/// let e = GetSubtreeRootsError::from(tonic::Status::internal("oops"));
+/// assert!(matches!(e, GetSubtreeRootsError::GetSubtreeRootsError(_)));
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GetSubtreeRootsError {
     #[error(transparent)]
@@ -254,6 +402,19 @@ pub enum GetSubtreeRootsError {
 /// - `GetClientError` means the connection was never established.
 /// - `PingError` means the server returned a gRPC status (e.g. the
 ///   server was not started with `--ping-very-insecure`).
+///
+/// ```
+/// # #[cfg(feature = "ping-very-insecure")]
+/// # {
+/// use zingo_netutils::{GetClientError, PingError};
+///
+/// let e = PingError::from(GetClientError::InvalidScheme);
+/// assert!(matches!(e, PingError::GetClientError(_)));
+///
+/// let e = PingError::from(tonic::Status::permission_denied("not enabled"));
+/// assert!(matches!(e, PingError::PingError(_)));
+/// # }
+/// ```
 #[cfg(feature = "ping-very-insecure")]
 #[derive(Debug, thiserror::Error)]
 pub enum PingError {
@@ -380,6 +541,20 @@ pub mod transparent {
     /// Callers can depend on:
     /// - `GetClientError` means the connection was never established.
     /// - `GetTaddressTxidsError` means the server returned a gRPC status.
+    ///
+    /// ```
+    /// # #[cfg(feature = "globally-public-transparent")]
+    /// # {
+    /// use zingo_netutils::error::transparent::GetTaddressTxidsError;
+    /// use zingo_netutils::GetClientError;
+    ///
+    /// let e = GetTaddressTxidsError::from(GetClientError::InvalidScheme);
+    /// assert!(matches!(e, GetTaddressTxidsError::GetClientError(_)));
+    ///
+    /// let e = GetTaddressTxidsError::from(tonic::Status::internal("oops"));
+    /// assert!(matches!(e, GetTaddressTxidsError::GetTaddressTxidsError(_)));
+    /// # }
+    /// ```
     #[derive(Debug, thiserror::Error)]
     pub enum GetTaddressTxidsError {
         #[error(transparent)]
@@ -394,6 +569,20 @@ pub mod transparent {
     /// Callers can depend on:
     /// - `GetClientError` means the connection was never established.
     /// - `GetTaddressTransactionsError` means the server returned a gRPC status.
+    ///
+    /// ```
+    /// # #[cfg(feature = "globally-public-transparent")]
+    /// # {
+    /// use zingo_netutils::error::transparent::GetTaddressTransactionsError;
+    /// use zingo_netutils::GetClientError;
+    ///
+    /// let e = GetTaddressTransactionsError::from(GetClientError::InvalidScheme);
+    /// assert!(matches!(e, GetTaddressTransactionsError::GetClientError(_)));
+    ///
+    /// let e = GetTaddressTransactionsError::from(tonic::Status::internal("oops"));
+    /// assert!(matches!(e, GetTaddressTransactionsError::GetTaddressTransactionsError(_)));
+    /// # }
+    /// ```
     #[derive(Debug, thiserror::Error)]
     pub enum GetTaddressTransactionsError {
         #[error(transparent)]
@@ -408,6 +597,20 @@ pub mod transparent {
     /// Callers can depend on:
     /// - `GetClientError` means the connection was never established.
     /// - `GetTaddressBalanceError` means the server returned a gRPC status.
+    ///
+    /// ```
+    /// # #[cfg(feature = "globally-public-transparent")]
+    /// # {
+    /// use zingo_netutils::error::transparent::GetTaddressBalanceError;
+    /// use zingo_netutils::GetClientError;
+    ///
+    /// let e = GetTaddressBalanceError::from(GetClientError::InvalidScheme);
+    /// assert!(matches!(e, GetTaddressBalanceError::GetClientError(_)));
+    ///
+    /// let e = GetTaddressBalanceError::from(tonic::Status::internal("oops"));
+    /// assert!(matches!(e, GetTaddressBalanceError::GetTaddressBalanceError(_)));
+    /// # }
+    /// ```
     #[derive(Debug, thiserror::Error)]
     pub enum GetTaddressBalanceError {
         #[error(transparent)]
@@ -422,6 +625,20 @@ pub mod transparent {
     /// Callers can depend on:
     /// - `GetClientError` means the connection was never established.
     /// - `GetTaddressBalanceStreamError` means the server returned a gRPC status.
+    ///
+    /// ```
+    /// # #[cfg(feature = "globally-public-transparent")]
+    /// # {
+    /// use zingo_netutils::error::transparent::GetTaddressBalanceStreamError;
+    /// use zingo_netutils::GetClientError;
+    ///
+    /// let e = GetTaddressBalanceStreamError::from(GetClientError::InvalidScheme);
+    /// assert!(matches!(e, GetTaddressBalanceStreamError::GetClientError(_)));
+    ///
+    /// let e = GetTaddressBalanceStreamError::from(tonic::Status::internal("oops"));
+    /// assert!(matches!(e, GetTaddressBalanceStreamError::GetTaddressBalanceStreamError(_)));
+    /// # }
+    /// ```
     #[derive(Debug, thiserror::Error)]
     pub enum GetTaddressBalanceStreamError {
         #[error(transparent)]
@@ -436,6 +653,20 @@ pub mod transparent {
     /// Callers can depend on:
     /// - `GetClientError` means the connection was never established.
     /// - `GetAddressUtxosError` means the server returned a gRPC status.
+    ///
+    /// ```
+    /// # #[cfg(feature = "globally-public-transparent")]
+    /// # {
+    /// use zingo_netutils::error::transparent::GetAddressUtxosError;
+    /// use zingo_netutils::GetClientError;
+    ///
+    /// let e = GetAddressUtxosError::from(GetClientError::InvalidScheme);
+    /// assert!(matches!(e, GetAddressUtxosError::GetClientError(_)));
+    ///
+    /// let e = GetAddressUtxosError::from(tonic::Status::internal("oops"));
+    /// assert!(matches!(e, GetAddressUtxosError::GetAddressUtxosError(_)));
+    /// # }
+    /// ```
     #[derive(Debug, thiserror::Error)]
     pub enum GetAddressUtxosError {
         #[error(transparent)]
@@ -451,6 +682,20 @@ pub mod transparent {
     /// - `GetClientError` means the connection was never established.
     /// - `GetAddressUtxosStreamError` means the server returned a gRPC status
     ///   before or instead of streaming UTXOs.
+    ///
+    /// ```
+    /// # #[cfg(feature = "globally-public-transparent")]
+    /// # {
+    /// use zingo_netutils::error::transparent::GetAddressUtxosStreamError;
+    /// use zingo_netutils::GetClientError;
+    ///
+    /// let e = GetAddressUtxosStreamError::from(GetClientError::InvalidScheme);
+    /// assert!(matches!(e, GetAddressUtxosStreamError::GetClientError(_)));
+    ///
+    /// let e = GetAddressUtxosStreamError::from(tonic::Status::internal("oops"));
+    /// assert!(matches!(e, GetAddressUtxosStreamError::GetAddressUtxosStreamError(_)));
+    /// # }
+    /// ```
     #[derive(Debug, thiserror::Error)]
     pub enum GetAddressUtxosStreamError {
         #[error(transparent)]

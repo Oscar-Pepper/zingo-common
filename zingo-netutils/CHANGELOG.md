@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   submodule (gated by `globally-public-transparent`).
 - Unit test suite for every error enum variant (`error::tests`,
   `error::transparent::tests`).
+- Doc-test on every error enum proving the contract (`From` conversions,
+  variant matching). Feature-gated doc-tests use `#[cfg]` so
+  `cargo test --doc` passes with or without features.
 - `GrpcIndexer` struct implementing `Indexer` (and `TransparentIndexer`)
   over gRPC. Validates URI at construction (`new` returns `Result`) and
   pre-builds the TLS endpoint.
