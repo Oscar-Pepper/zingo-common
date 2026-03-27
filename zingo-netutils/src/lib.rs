@@ -852,4 +852,55 @@ mod tests {
             response.chain_name
         );
     }
+
+    /// The proto spec says:
+    ///   "If range.start <= range.end, blocks are returned increasing height order;
+    ///    otherwise blocks are returned in decreasing height order."
+    ///
+    /// Our doc for `get_block_range` currently claims ascending-only.
+    /// This test requests a descending range (start > end) and asserts
+    /// the server returns blocks in decreasing height order.
+    #[tokio::test]
+    async fn get_block_range_supports_descending_order() {
+        use tokio_stream::StreamExt;
+
+        let uri: http::Uri = "https://zec.rocks:443".parse().unwrap();
+        let indexer = GrpcIndexer::new(uri).expect("valid URI");
+
+        let tip = indexer.get_latest_block().await.expect("get_latest_block");
+        let start_height = tip.height;
+        let end_height = start_height.saturating_sub(4);
+
+        // start > end → proto says descending order
+        let range = BlockRange {
+            start: Some(BlockId { height: start_height, hash: vec![] }),
+            end: Some(BlockId { height: end_height, hash: vec![] }),
+            pool_types: vec![],
+        };
+
+        let mut stream = indexer
+            .get_block_range(range)
+            .await
+            .expect("get_block_range");
+
+        let mut heights = Vec::new();
+        while let Some(block) = stream.next().await {
+            let block = block.expect("stream item");
+            heights.push(block.height);
+        }
+
+        assert!(
+            !heights.is_empty(),
+            "expected at least one block in the descending range",
+        );
+
+        // The proto guarantees descending order when start > end.
+        // If this assertion fails, the server does not support descending ranges.
+        for window in heights.windows(2) {
+            assert!(
+                window[0] > window[1],
+                "expected descending order, but got heights: {heights:?}",
+            );
+        }
+    }
 }

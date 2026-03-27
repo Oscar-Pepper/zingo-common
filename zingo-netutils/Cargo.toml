@@ -26,6 +26,7 @@ ping-very-insecure = []
 back_compatible = ["dep:zcash_client_backend"]
 
 [dev-dependencies]
+tokio-stream.workspace = true
 hyper-rustls.workspace = true
 hyper-util.workspace = true
 hyper.workspace = true
