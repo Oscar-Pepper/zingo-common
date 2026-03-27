@@ -29,8 +29,9 @@ pub trait TransparentIndexer: Indexer {
 
     /// Return a stream of transactions for a transparent address in a block range.
     ///
-    /// Callers should migrate to
+    /// Same behavior as
     /// [`get_taddress_transactions`](TransparentIndexer::get_taddress_transactions).
+    /// This method is a legacy alias; callers should migrate.
     #[deprecated(note = "use get_taddress_transactions instead")]
     fn get_taddress_txids(
         &self,
