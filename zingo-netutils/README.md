@@ -1,5 +1,11 @@
 # zingo-netutils
 
+*Test counts reflect the `dev` branch and update on each push.*
+
+![unit tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/zancas/56329b760b39044631c42c0b36dcb2e5/raw/unit.json)
+![doc tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/zancas/56329b760b39044631c42c0b36dcb2e5/raw/doc.json)
+![integration tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/zancas/56329b760b39044631c42c0b36dcb2e5/raw/integration.json)
+
 A complete `Indexer` abstraction for communicating with Zcash chain indexers
 (`lightwalletd` / `zainod`).
 
