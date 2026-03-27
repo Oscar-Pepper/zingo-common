@@ -133,31 +133,49 @@ pub trait Indexer {
     type GetAddressUtxosStreamError;
 
     /// Return server metadata (chain name, block height, version, etc.).
+    ///
+    /// The returned [`LightdInfo`] includes the chain name, current block height,
+    /// server version, and consensus branch ID. Callers should not cache this
+    /// value across sync boundaries as the block height is a point-in-time snapshot.
     fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::GetInfoError>>;
 
     /// Return the height and hash of the chain tip.
+    ///
+    /// The returned [`BlockId`] identifies the most recent block the server
+    /// is aware of. The hash may be omitted by some implementations.
     fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::GetLatestBlockError>>;
 
-    /// Submit a raw transaction. Returns the txid on success, or a
-    /// rejection reason on failure.
+    /// Submit a raw transaction to the network.
+    ///
+    /// On success, returns the transaction ID as a hex string.
+    /// On rejection by the network, returns a [`Self::SendTransactionError`]
+    /// containing the rejection reason. Callers should be prepared for
+    /// transient failures and may retry.
     fn send_transaction(
         &self,
         tx_bytes: Box<[u8]>,
     ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
 
     /// Fetch the note commitment tree state at the given block height.
+    ///
+    /// Returns Sapling and Orchard commitment tree frontiers as of the
+    /// end of the specified block. The caller must supply a valid mined
+    /// block height; requesting an unmined height is an error.
     fn get_trees(
         &self,
         height: u64,
     ) -> impl Future<Output = Result<TreeState, Self::GetTreesError>>;
 
     /// Return the compact block at the given height.
+    ///
+    /// The returned [`CompactBlock`] contains compact transaction data
+    /// sufficient for trial decryption and nullifier detection.
     fn get_block(
         &self,
         block_id: BlockId,
     ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockError>>;
 
-    /// Return the compact block at the given height, with only nullifiers in actions.
+    /// Return the compact block at the given height, with only nullifiers.
     #[deprecated(note = "use get_block instead")]
     fn get_block_nullifiers(
         &self,
@@ -165,6 +183,10 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockNullifiersError>>;
 
     /// Return a stream of consecutive compact blocks for the given range.
+    ///
+    /// Both endpoints of the range are inclusive. The stream yields blocks
+    /// in ascending height order. Callers must consume or drop the stream
+    /// before the connection is reused.
     fn get_block_range(
         &self,
         range: BlockRange,
@@ -177,60 +199,82 @@ pub trait Indexer {
         range: BlockRange,
     ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeNullifiersError>>;
 
-    /// Return the full transaction identified by the given filter.
+    /// Return the full serialized transaction matching the given filter.
+    ///
+    /// The filter identifies a transaction by its txid hash. The returned
+    /// [`RawTransaction`] contains the complete serialized bytes and the
+    /// block height at which it was mined (0 if in the mempool).
     fn get_transaction(
         &self,
         filter: TxFilter,
     ) -> impl Future<Output = Result<RawTransaction, Self::GetTransactionError>>;
 
-    /// Return a stream of transactions for the given transparent address and block range.
+    /// Return a stream of transactions for a transparent address in a block range.
     #[deprecated(note = "use get_taddress_transactions instead")]
     fn get_taddress_txids(
         &self,
         filter: TransparentAddressBlockFilter,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTxidsError>>;
 
-    /// Return a stream of transactions for the given transparent address and block range.
+    /// Return a stream of transactions for a transparent address in a block range.
+    ///
+    /// Results are sorted by block height. Mempool transactions are not included.
     fn get_taddress_transactions(
         &self,
         filter: TransparentAddressBlockFilter,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTransactionsError>>;
 
-    /// Return the total balance for the given transparent addresses.
+    /// Return the total confirmed balance for the given transparent addresses.
     fn get_taddress_balance(
         &self,
         addresses: AddressList,
     ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceError>>;
 
     /// Return a stream of compact transactions currently in the mempool.
+    ///
+    /// The request may include txid suffixes to exclude from the results,
+    /// allowing the caller to avoid re-fetching known transactions.
+    /// Results may be seconds out of date.
     fn get_mempool_tx(
         &self,
         request: GetMempoolTxRequest,
     ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, Self::GetMempoolTxError>>;
 
-    /// Return a stream of raw mempool transactions, closing when a new block is mined.
+    /// Return a stream of raw mempool transactions.
+    ///
+    /// The stream remains open while there are mempool transactions and
+    /// closes when a new block is mined.
     fn get_mempool_stream(
         &self,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetMempoolStreamError>>;
 
-    /// Return the latest note commitment tree state.
+    /// Return the note commitment tree state at the chain tip.
     fn get_latest_tree_state(
         &self,
     ) -> impl Future<Output = Result<TreeState, Self::GetLatestTreeStateError>>;
 
     /// Return a stream of subtree roots for the given shielded protocol.
+    ///
+    /// Yields roots in ascending index order starting from `start_index`.
+    /// Pass `max_entries = 0` to request all available roots.
     fn get_subtree_roots(
         &self,
         arg: GetSubtreeRootsArg,
     ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, Self::GetSubtreeRootsError>>;
 
-    /// Return UTXOs for the given addresses.
+    /// Return UTXOs for the given addresses as a single response.
+    ///
+    /// Results are sorted by block height. Pass `max_entries = 0` for
+    /// unlimited results.
     fn get_address_utxos(
         &self,
         arg: GetAddressUtxosArg,
     ) -> impl Future<Output = Result<GetAddressUtxosReplyList, Self::GetAddressUtxosError>>;
 
     /// Return a stream of UTXOs for the given addresses.
+    ///
+    /// Prefer this over [`get_address_utxos`](Indexer::get_address_utxos)
+    /// when the result set may be large.
     fn get_address_utxos_stream(
         &self,
         arg: GetAddressUtxosArg,
