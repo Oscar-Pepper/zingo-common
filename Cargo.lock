@@ -539,9 +539,9 @@ checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "lightwallet-protocol"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e728e43fec697a3ba57e3791599af52cda2ec0011833cdfe5175095083ef4e91"
+checksum = "f440c45ebe0bf0d1aa23f89d3992461a37c3375b6e09f406492a76671e15c0ca"
 dependencies = [
  "prost",
  "tonic",

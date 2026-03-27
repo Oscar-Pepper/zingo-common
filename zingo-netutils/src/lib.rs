@@ -13,9 +13,9 @@ pub use lightwallet_protocol;
 
 use lightwallet_protocol::{
     AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
-    CompactTxStreamerClient, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply,
-    GetAddressUtxosReplyList, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    CompactTxStreamerClient, Empty, GetAddressUtxosArg, GetAddressUtxosReply,
+    GetAddressUtxosReplyList, GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction,
+    SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -158,6 +158,7 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockError>>;
 
     /// Return the compact block at the given height, with only nullifiers in actions.
+    #[deprecated(note = "use get_block instead")]
     fn get_block_nullifiers(
         &self,
         block_id: BlockId,
@@ -170,6 +171,7 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeError>>;
 
     /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
+    #[deprecated(note = "use get_block_range instead")]
     fn get_block_range_nullifiers(
         &self,
         range: BlockRange,
@@ -203,7 +205,7 @@ pub trait Indexer {
     /// Return a stream of compact transactions currently in the mempool.
     fn get_mempool_tx(
         &self,
-        exclude: Exclude,
+        request: GetMempoolTxRequest,
     ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, Self::GetMempoolTxError>>;
 
     /// Return a stream of raw mempool transactions, closing when a new block is mined.
@@ -379,6 +381,7 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_block(request).await?.into_inner())
     }
 
+    #[allow(deprecated)]
     async fn get_block_nullifiers(&self, block_id: BlockId) -> Result<CompactBlock, RpcError> {
         let (mut client, request) = self.time_boxed_call(block_id).await?;
         Ok(client.get_block_nullifiers(request).await?.into_inner())
@@ -392,6 +395,7 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_block_range(request).await?.into_inner())
     }
 
+    #[allow(deprecated)]
     async fn get_block_range_nullifiers(
         &self,
         range: BlockRange,
@@ -435,9 +439,9 @@ impl Indexer for GrpcIndexer {
 
     async fn get_mempool_tx(
         &self,
-        exclude: Exclude,
+        request: GetMempoolTxRequest,
     ) -> Result<tonic::Streaming<CompactTx>, RpcError> {
-        let (mut client, request) = self.stream_call(exclude).await?;
+        let (mut client, request) = self.stream_call(request).await?;
         Ok(client.get_mempool_tx(request).await?.into_inner())
     }
 
