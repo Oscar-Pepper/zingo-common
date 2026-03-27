@@ -488,16 +488,7 @@ impl Indexer for GrpcIndexer {
 }
 
 #[cfg(test)]
-mod indexer_implementation {
-
-    mod get_info {
-        #[tokio::test]
-        async fn call_get_info() {
-            assert_eq!(1, 1);
-            //let grpc_index = GrpcIndexer::new();
-        }
-    }
-}
+mod proto_agreement;
 
 #[cfg(test)]
 mod tests {
