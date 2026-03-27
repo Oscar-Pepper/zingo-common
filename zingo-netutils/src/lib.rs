@@ -8,9 +8,12 @@ use std::time::Duration;
 
 use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
-use zcash_client_backend::proto::service::{
-    BlockId, ChainSpec, Empty, LightdInfo, RawTransaction, TreeState,
-    compact_tx_streamer_client::CompactTxStreamerClient,
+
+use lightwallet_protocol::CompactTxStreamerClient;
+use lightwallet_protocol::{
+    AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Empty, Exclude,
+    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetSubtreeRootsArg,
+    LightdInfo, RawTransaction, SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +87,19 @@ pub enum GetTreesError {
     GetTreeStateError(#[from] tonic::Status),
 }
 
+/// Common error type for gRPC calls that only fail on connection or status.
+///
+/// Used by [`GrpcIndexer`] for trait methods that have no additional failure modes
+/// beyond establishing a connection and receiving a gRPC response.
+#[derive(Debug, thiserror::Error)]
+pub enum RpcError {
+    #[error(transparent)]
+    GetClientError(#[from] GetClientError),
+
+    #[error("gRPC error: {0}")]
+    Status(#[from] tonic::Status),
+}
+
 /// Trait for communicating with a Zcash chain indexer.
 ///
 /// Implementors provide access to a lightwalletd-compatible server.
@@ -99,6 +115,20 @@ pub trait Indexer {
     type GetLatestBlockError;
     type SendTransactionError;
     type GetTreesError;
+    type GetBlockError;
+    type GetBlockNullifiersError;
+    type GetBlockRangeError;
+    type GetBlockRangeNullifiersError;
+    type GetTransactionError;
+    type GetTaddressTxidsError;
+    type GetTaddressTransactionsError;
+    type GetTaddressBalanceError;
+    type GetMempoolTxError;
+    type GetMempoolStreamError;
+    type GetLatestTreeStateError;
+    type GetSubtreeRootsError;
+    type GetAddressUtxosError;
+    type GetAddressUtxosStreamError;
 
     /// Return server metadata (chain name, block height, version, etc.).
     fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::GetInfoError>>;
@@ -118,6 +148,91 @@ pub trait Indexer {
         &self,
         height: u64,
     ) -> impl Future<Output = Result<TreeState, Self::GetTreesError>>;
+
+    /// Return the compact block at the given height.
+    fn get_block(
+        &self,
+        block_id: BlockId,
+    ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockError>>;
+
+    /// Return the compact block at the given height, with only nullifiers in actions.
+    fn get_block_nullifiers(
+        &self,
+        block_id: BlockId,
+    ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockNullifiersError>>;
+
+    /// Return a stream of consecutive compact blocks for the given range.
+    fn get_block_range(
+        &self,
+        range: BlockRange,
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeError>>;
+
+    /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
+    fn get_block_range_nullifiers(
+        &self,
+        range: BlockRange,
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeNullifiersError>>;
+
+    /// Return the full transaction identified by the given filter.
+    fn get_transaction(
+        &self,
+        filter: TxFilter,
+    ) -> impl Future<Output = Result<RawTransaction, Self::GetTransactionError>>;
+
+    /// Return a stream of transactions for the given transparent address and block range.
+    #[deprecated(note = "use get_taddress_transactions instead")]
+    fn get_taddress_txids(
+        &self,
+        filter: TransparentAddressBlockFilter,
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTxidsError>>;
+
+    /// Return a stream of transactions for the given transparent address and block range.
+    fn get_taddress_transactions(
+        &self,
+        filter: TransparentAddressBlockFilter,
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTransactionsError>>;
+
+    /// Return the total balance for the given transparent addresses.
+    fn get_taddress_balance(
+        &self,
+        addresses: AddressList,
+    ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceError>>;
+
+    /// Return a stream of compact transactions currently in the mempool.
+    fn get_mempool_tx(
+        &self,
+        exclude: Exclude,
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, Self::GetMempoolTxError>>;
+
+    /// Return a stream of raw mempool transactions, closing when a new block is mined.
+    fn get_mempool_stream(
+        &self,
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetMempoolStreamError>>;
+
+    /// Return the latest note commitment tree state.
+    fn get_latest_tree_state(
+        &self,
+    ) -> impl Future<Output = Result<TreeState, Self::GetLatestTreeStateError>>;
+
+    /// Return a stream of subtree roots for the given shielded protocol.
+    fn get_subtree_roots(
+        &self,
+        arg: GetSubtreeRootsArg,
+    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, Self::GetSubtreeRootsError>>;
+
+    /// Return UTXOs for the given addresses.
+    fn get_address_utxos(
+        &self,
+        arg: GetAddressUtxosArg,
+    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, Self::GetAddressUtxosError>>;
+
+    /// Return a stream of UTXOs for the given addresses.
+    fn get_address_utxos_stream(
+        &self,
+        arg: GetAddressUtxosArg,
+    ) -> impl Future<
+        Output = Result<tonic::Streaming<GetAddressUtxosReply>, Self::GetAddressUtxosStreamError>,
+    >;
 }
 
 /// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
@@ -176,6 +291,24 @@ impl GrpcIndexer {
         let channel = self.endpoint.connect().await?;
         Ok(CompactTxStreamerClient::new(channel))
     }
+
+    async fn time_boxed_call<T>(
+        &self,
+        payload: T,
+    ) -> Result<(CompactTxStreamerClient<Channel>, Request<T>), GetClientError> {
+        let client = self.get_client().await?;
+        let mut request = Request::new(payload);
+        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
+        Ok((client, request))
+    }
+
+    async fn stream_call<T>(
+        &self,
+        payload: T,
+    ) -> Result<(CompactTxStreamerClient<Channel>, Request<T>), GetClientError> {
+        let client = self.get_client().await?;
+        Ok((client, Request::new(payload)))
+    }
 }
 
 impl Indexer for GrpcIndexer {
@@ -183,32 +316,39 @@ impl Indexer for GrpcIndexer {
     type GetLatestBlockError = GetLatestBlockError;
     type SendTransactionError = SendTransactionError;
     type GetTreesError = GetTreesError;
+    type GetBlockError = RpcError;
+    type GetBlockNullifiersError = RpcError;
+    type GetBlockRangeError = RpcError;
+    type GetBlockRangeNullifiersError = RpcError;
+    type GetTransactionError = RpcError;
+    type GetTaddressTxidsError = RpcError;
+    type GetTaddressTransactionsError = RpcError;
+    type GetTaddressBalanceError = RpcError;
+    type GetMempoolTxError = RpcError;
+    type GetMempoolStreamError = RpcError;
+    type GetLatestTreeStateError = RpcError;
+    type GetSubtreeRootsError = RpcError;
+    type GetAddressUtxosError = RpcError;
+    type GetAddressUtxosStreamError = RpcError;
 
     async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
-        let mut client = self.get_client().await?;
-        let mut request = Request::new(Empty {});
-        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
-        let response = client.get_lightd_info(request).await?;
-        Ok(response.into_inner())
+        let (mut client, request) = self.time_boxed_call(Empty {}).await?;
+        Ok(client.get_lightd_info(request).await?.into_inner())
     }
 
     async fn get_latest_block(&self) -> Result<BlockId, GetLatestBlockError> {
-        let mut client = self.get_client().await?;
-        let mut request = Request::new(ChainSpec {});
-        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
-        let response = client.get_latest_block(request).await?;
-        Ok(response.into_inner())
+        let (mut client, request) = self.time_boxed_call(ChainSpec {}).await?;
+        Ok(client.get_latest_block(request).await?.into_inner())
     }
 
     async fn send_transaction(&self, tx_bytes: Box<[u8]>) -> Result<String, SendTransactionError> {
-        let mut client = self.get_client().await?;
-        let mut request = Request::new(RawTransaction {
-            data: tx_bytes.to_vec(),
-            height: 0,
-        });
-        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
-        let response = client.send_transaction(request).await?;
-        let sendresponse = response.into_inner();
+        let (mut client, request) = self
+            .time_boxed_call(RawTransaction {
+                data: tx_bytes.to_vec(),
+                height: 0,
+            })
+            .await?;
+        let sendresponse = client.send_transaction(request).await?.into_inner();
         if sendresponse.error_code == 0 {
             let mut transaction_id = sendresponse.error_message;
             if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
@@ -223,14 +363,114 @@ impl Indexer for GrpcIndexer {
     }
 
     async fn get_trees(&self, height: u64) -> Result<TreeState, GetTreesError> {
-        let mut client = self.get_client().await?;
-        let response = client
-            .get_tree_state(Request::new(BlockId {
+        let (mut client, request) = self
+            .time_boxed_call(BlockId {
                 height,
                 hash: vec![],
-            }))
+            })
             .await?;
-        Ok(response.into_inner())
+        Ok(client.get_tree_state(request).await?.into_inner())
+    }
+
+    async fn get_block(&self, block_id: BlockId) -> Result<CompactBlock, RpcError> {
+        let (mut client, request) = self.time_boxed_call(block_id).await?;
+        Ok(client.get_block(request).await?.into_inner())
+    }
+
+    async fn get_block_nullifiers(&self, block_id: BlockId) -> Result<CompactBlock, RpcError> {
+        let (mut client, request) = self.time_boxed_call(block_id).await?;
+        Ok(client.get_block_nullifiers(request).await?.into_inner())
+    }
+
+    async fn get_block_range(
+        &self,
+        range: BlockRange,
+    ) -> Result<tonic::Streaming<CompactBlock>, RpcError> {
+        let (mut client, request) = self.stream_call(range).await?;
+        Ok(client.get_block_range(request).await?.into_inner())
+    }
+
+    async fn get_block_range_nullifiers(
+        &self,
+        range: BlockRange,
+    ) -> Result<tonic::Streaming<CompactBlock>, RpcError> {
+        let (mut client, request) = self.stream_call(range).await?;
+        Ok(client
+            .get_block_range_nullifiers(request)
+            .await?
+            .into_inner())
+    }
+
+    async fn get_transaction(&self, filter: TxFilter) -> Result<RawTransaction, RpcError> {
+        let (mut client, request) = self.time_boxed_call(filter).await?;
+        Ok(client.get_transaction(request).await?.into_inner())
+    }
+
+    #[allow(deprecated)]
+    async fn get_taddress_txids(
+        &self,
+        filter: TransparentAddressBlockFilter,
+    ) -> Result<tonic::Streaming<RawTransaction>, RpcError> {
+        let (mut client, request) = self.stream_call(filter).await?;
+        Ok(client.get_taddress_txids(request).await?.into_inner())
+    }
+
+    async fn get_taddress_transactions(
+        &self,
+        filter: TransparentAddressBlockFilter,
+    ) -> Result<tonic::Streaming<RawTransaction>, RpcError> {
+        let (mut client, request) = self.stream_call(filter).await?;
+        Ok(client
+            .get_taddress_transactions(request)
+            .await?
+            .into_inner())
+    }
+
+    async fn get_taddress_balance(&self, addresses: AddressList) -> Result<Balance, RpcError> {
+        let (mut client, request) = self.time_boxed_call(addresses).await?;
+        Ok(client.get_taddress_balance(request).await?.into_inner())
+    }
+
+    async fn get_mempool_tx(
+        &self,
+        exclude: Exclude,
+    ) -> Result<tonic::Streaming<CompactTx>, RpcError> {
+        let (mut client, request) = self.stream_call(exclude).await?;
+        Ok(client.get_mempool_tx(request).await?.into_inner())
+    }
+
+    async fn get_mempool_stream(&self) -> Result<tonic::Streaming<RawTransaction>, RpcError> {
+        let (mut client, request) = self.stream_call(Empty {}).await?;
+        Ok(client.get_mempool_stream(request).await?.into_inner())
+    }
+
+    async fn get_latest_tree_state(&self) -> Result<TreeState, RpcError> {
+        let (mut client, request) = self.time_boxed_call(Empty {}).await?;
+        Ok(client.get_latest_tree_state(request).await?.into_inner())
+    }
+
+    async fn get_subtree_roots(
+        &self,
+        arg: GetSubtreeRootsArg,
+    ) -> Result<tonic::Streaming<SubtreeRoot>, RpcError> {
+        let (mut client, request) = self.stream_call(arg).await?;
+        Ok(client.get_subtree_roots(request).await?.into_inner())
+    }
+
+    async fn get_address_utxos(
+        &self,
+        arg: GetAddressUtxosArg,
+    ) -> Result<GetAddressUtxosReplyList, RpcError> {
+        let (mut client, request) = self.time_boxed_call(arg).await?;
+        Ok(client.get_address_utxos(request).await?.into_inner())
+    }
+
+    async fn get_address_utxos_stream(
+        &self,
+        arg: GetAddressUtxosArg,
+    ) -> Result<tonic::Streaming<GetAddressUtxosReply>, RpcError> {
+        let (mut client, request) = self.stream_call(arg).await?;
+        Ok(client.get_address_utxos_stream(request).await?.into_inner())
     }
 }
 
