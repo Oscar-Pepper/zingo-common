@@ -1,7 +1,42 @@
-//! `zingo-netutils`
+//! A complete [`Indexer`] abstraction for communicating with Zcash chain
+//! indexers (`lightwalletd` / `zainod`).
 //!
-//! This crate provides the [`Indexer`] trait for communicating with a Zcash chain indexer,
-//! and [`GrpcIndexer`], a concrete implementation that connects to a zainod server via gRPC.
+//! # Organizing principle
+//!
+//! The [`Indexer`] trait is the sole interface a Zcash wallet or tool needs
+//! to query, sync, and broadcast against a chain indexer. It is
+//! implementation-agnostic: production code uses the provided [`GrpcIndexer`]
+//! (gRPC over tonic), while tests can supply a mock implementor with no
+//! network dependency.
+//!
+//! All proto types come from
+//! [`lightwallet-protocol`](https://crates.io/crates/lightwallet-protocol)
+//! and are re-exported via `pub use lightwallet_protocol` so consumers do
+//! not need an additional dependency.
+//!
+//! # Feature gates
+//!
+//! All features are **off by default**.
+//!
+//! | Feature | What it enables |
+//! |---|---|
+//! | `globally-public-transparent` | [`TransparentIndexer`] sub-trait for t-address balance, transaction history, and UTXO queries. Pulls in `tokio-stream`. |
+//! | `ping-very-insecure` | [`Indexer::ping`] method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag. Testing only. |
+//! | `back_compatible` | [`GrpcIndexer::get_zcb_client`] returning `zcash_client_backend`'s `CompactTxStreamerClient` for pepper-sync compatibility. |
+//!
+//! **Note:** Build docs with `--all-features` so intra-doc links to
+//! feature-gated items resolve:
+//! ```text
+//! RUSTDOCFLAGS="-D warnings" cargo doc --all-features --document-private-items
+//! ```
+//!
+//! # Backwards compatibility
+//!
+//! Code that needs a raw `CompactTxStreamerClient<Channel>` (e.g.
+//! pepper-sync) can call [`GrpcIndexer::get_client`] for
+//! `lightwallet_protocol` types, or enable the `back_compatible` feature
+//! for [`GrpcIndexer::get_zcb_client`] which returns
+//! `zcash_client_backend`'s client type as a migration bridge.
 
 use std::future::Future;
 use std::time::Duration;

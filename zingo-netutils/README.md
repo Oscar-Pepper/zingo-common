@@ -110,6 +110,15 @@ execute when the feature is enabled.
 | `GetAddressUtxosError` | `get_address_utxos` |
 | `GetAddressUtxosStreamError` | `get_address_utxos_stream` |
 
+## Building docs
+
+Docs must be built with `--all-features` so intra-doc links to
+feature-gated items resolve:
+
+```sh
+RUSTDOCFLAGS="-D warnings" cargo doc --all-features --document-private-items
+```
+
 ## TLS
 
 HTTPS connections use rustls with webpki root certificates (via tonic's

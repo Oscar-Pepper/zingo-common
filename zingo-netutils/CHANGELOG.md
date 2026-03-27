@@ -72,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump `tonic` to `0.14`, `lightwallet-protocol` to `0.3`.
 - `hyper`, `hyper-rustls`, `hyper-util` moved from dependencies to
   dev-dependencies.
+- `cargo doc` requires `--all-features` for intra-doc links to
+  feature-gated items (`TransparentIndexer`, `Indexer::ping`,
+  `GrpcIndexer::get_zcb_client`).
 
 ### Removed
 

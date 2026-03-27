@@ -1,4 +1,4 @@
-//! Transparent address operations for the [`Indexer`](super::Indexer) trait.
+//! Transparent address operations for the [`Indexer`] trait.
 //!
 //! These methods expose transparent (t-address) balance queries, transaction
 //! history, and UTXO lookups. They are gated behind the
