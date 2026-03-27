@@ -31,7 +31,7 @@ jobs:
         uses: zingolabs/infrastructure/.github/actions/cargo-shear@20485fed7a080e381130ed8120419dc81acae641
 
   cargo-checkmate:
-    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@672fe8ac9504239e35fa8fa13da7175af88c0b9f
+    uses: zingolabs/infrastructure/.github/workflows/cargo-checkmate.yaml@46d6b15c994835f386973aabbc76a5503760dafe
     with:
       doc-all-features: 'true'
 
