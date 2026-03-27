@@ -161,14 +161,14 @@ pub trait Indexer {
         tx_bytes: Box<[u8]>,
     ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
 
-    /// Fetch the note commitment tree state at the given block height.
+    /// Fetch the note commitment tree state for the given block.
     ///
     /// Returns Sapling and Orchard commitment tree frontiers as of the
-    /// end of the specified block. The caller must supply a valid mined
-    /// block height; requesting an unmined height is an error.
+    /// end of the specified block. The block can be identified by height,
+    /// hash, or both via [`BlockId`]. Requesting an unmined block is an error.
     fn get_tree_state(
         &self,
-        height: u64,
+        block_id: BlockId,
     ) -> impl Future<Output = Result<TreeState, Self::GetTreeStateError>>;
 
     /// Return the compact block at the given height.
@@ -413,13 +413,8 @@ impl Indexer for GrpcIndexer {
         }
     }
 
-    async fn get_tree_state(&self, height: u64) -> Result<TreeState, GetTreeStateError> {
-        let (mut client, request) = self
-            .time_boxed_call(BlockId {
-                height,
-                hash: vec![],
-            })
-            .await?;
+    async fn get_tree_state(&self, block_id: BlockId) -> Result<TreeState, GetTreeStateError> {
+        let (mut client, request) = self.time_boxed_call(block_id).await?;
         Ok(client.get_tree_state(request).await?.into_inner())
     }
 
