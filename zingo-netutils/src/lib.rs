@@ -17,6 +17,9 @@ use lightwallet_protocol::{
     TxFilter,
 };
 
+#[cfg(feature = "ping-very-insecure")]
+use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
+
 #[cfg(feature = "globally-public-transparent")]
 use lightwallet_protocol::{
     Address, AddressList, Balance, GetAddressUtxosArg, GetAddressUtxosReply,
@@ -143,6 +146,8 @@ pub trait Indexer {
     type GetAddressUtxosError;
     #[cfg(feature = "globally-public-transparent")]
     type GetAddressUtxosStreamError;
+    #[cfg(feature = "ping-very-insecure")]
+    type PingError;
 
     /// Return server metadata (chain name, block height, version, etc.).
     ///
@@ -308,6 +313,14 @@ pub trait Indexer {
     ) -> impl Future<
         Output = Result<tonic::Streaming<GetAddressUtxosReply>, Self::GetAddressUtxosStreamError>,
     >;
+
+    /// Simulate server latency for testing. Requires the server to be started
+    /// with `--ping-very-insecure`. Do not enable in production.
+    #[cfg(feature = "ping-very-insecure")]
+    fn ping(
+        &self,
+        duration: ProtoDuration,
+    ) -> impl Future<Output = Result<PingResponse, Self::PingError>>;
 }
 
 /// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
@@ -432,6 +445,8 @@ impl Indexer for GrpcIndexer {
     type GetAddressUtxosError = RpcError;
     #[cfg(feature = "globally-public-transparent")]
     type GetAddressUtxosStreamError = RpcError;
+    #[cfg(feature = "ping-very-insecure")]
+    type PingError = RpcError;
 
     async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
         let (mut client, request) = self.time_boxed_call(Empty {}).await?;
@@ -593,6 +608,12 @@ impl Indexer for GrpcIndexer {
     ) -> Result<tonic::Streaming<GetAddressUtxosReply>, RpcError> {
         let (mut client, request) = self.stream_call(arg).await?;
         Ok(client.get_address_utxos_stream(request).await?.into_inner())
+    }
+
+    #[cfg(feature = "ping-very-insecure")]
+    async fn ping(&self, duration: ProtoDuration) -> Result<PingResponse, RpcError> {
+        let (mut client, request) = self.time_boxed_call(duration).await?;
+        Ok(client.ping(request).await?.into_inner())
     }
 }
 
