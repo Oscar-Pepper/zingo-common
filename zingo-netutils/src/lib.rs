@@ -161,7 +161,7 @@ pub trait Indexer {
     /// Returns Sapling and Orchard commitment tree frontiers as of the
     /// end of the specified block. The caller must supply a valid mined
     /// block height; requesting an unmined height is an error.
-    fn get_trees(
+    fn get_tree_state(
         &self,
         height: u64,
     ) -> impl Future<Output = Result<TreeState, Self::GetTreesError>>;
