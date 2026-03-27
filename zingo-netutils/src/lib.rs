@@ -121,33 +121,33 @@ pub enum RpcError {
 ///   failures separately from server-side errors.
 /// - All methods are safe to call concurrently from multiple tasks.
 pub trait Indexer {
-    type GetInfoError;
-    type GetLatestBlockError;
-    type SendTransactionError;
-    type GetTreesError;
-    type GetBlockError;
-    type GetBlockNullifiersError;
-    type GetBlockRangeError;
-    type GetBlockRangeNullifiersError;
-    type GetTransactionError;
+    type GetInfoError: std::error::Error;
+    type GetLatestBlockError: std::error::Error;
+    type SendTransactionError: std::error::Error;
+    type GetTreesError: std::error::Error;
+    type GetBlockError: std::error::Error;
+    type GetBlockNullifiersError: std::error::Error;
+    type GetBlockRangeError: std::error::Error;
+    type GetBlockRangeNullifiersError: std::error::Error;
+    type GetTransactionError: std::error::Error;
     #[cfg(feature = "globally-public-transparent")]
-    type GetTaddressTxidsError;
+    type GetTaddressTxidsError: std::error::Error;
     #[cfg(feature = "globally-public-transparent")]
-    type GetTaddressTransactionsError;
+    type GetTaddressTransactionsError: std::error::Error;
     #[cfg(feature = "globally-public-transparent")]
-    type GetTaddressBalanceError;
+    type GetTaddressBalanceError: std::error::Error;
     #[cfg(feature = "globally-public-transparent")]
-    type GetTaddressBalanceStreamError;
-    type GetMempoolTxError;
-    type GetMempoolStreamError;
-    type GetLatestTreeStateError;
-    type GetSubtreeRootsError;
+    type GetTaddressBalanceStreamError: std::error::Error;
+    type GetMempoolTxError: std::error::Error;
+    type GetMempoolStreamError: std::error::Error;
+    type GetLatestTreeStateError: std::error::Error;
+    type GetSubtreeRootsError: std::error::Error;
     #[cfg(feature = "globally-public-transparent")]
-    type GetAddressUtxosError;
+    type GetAddressUtxosError: std::error::Error;
     #[cfg(feature = "globally-public-transparent")]
-    type GetAddressUtxosStreamError;
+    type GetAddressUtxosStreamError: std::error::Error;
     #[cfg(feature = "ping-very-insecure")]
-    type PingError;
+    type PingError: std::error::Error;
 
     /// Return server metadata (chain name, block height, version, etc.).
     ///
