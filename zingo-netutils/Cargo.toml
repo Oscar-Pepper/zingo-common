@@ -13,17 +13,16 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 http.workspace = true
-hyper-rustls.workspace = true
-hyper-util.workspace = true
-hyper.workspace = true
 thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
-
 lightwallet-protocol.workspace = true
 
 [dev-dependencies]
+hyper-rustls.workspace = true
+hyper-util.workspace = true
+hyper.workspace = true
 rustls-pemfile.workspace = true
 tokio.workspace = true
 http-body-util.workspace = true
-x509-parser = { workspace = true }
+x509-parser.workspace = true
