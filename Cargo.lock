@@ -2897,6 +2897,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-rustls",
+ "tokio-stream",
  "tonic",
  "x509-parser",
  "zcash_client_backend",

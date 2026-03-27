@@ -12,10 +12,15 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 pub use lightwallet_protocol;
 
 use lightwallet_protocol::{
-    AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
-    CompactTxStreamerClient, Empty, GetAddressUtxosArg, GetAddressUtxosReply,
-    GetAddressUtxosReplyList, GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction,
-    SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
+    BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
+    GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot, TreeState,
+    TxFilter,
+};
+
+#[cfg(feature = "globally-public-transparent")]
+use lightwallet_protocol::{
+    Address, AddressList, Balance, GetAddressUtxosArg, GetAddressUtxosReply,
+    GetAddressUtxosReplyList, TransparentAddressBlockFilter,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -122,14 +127,21 @@ pub trait Indexer {
     type GetBlockRangeError;
     type GetBlockRangeNullifiersError;
     type GetTransactionError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetTaddressTxidsError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetTaddressTransactionsError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetTaddressBalanceError;
+    #[cfg(feature = "globally-public-transparent")]
+    type GetTaddressBalanceStreamError;
     type GetMempoolTxError;
     type GetMempoolStreamError;
     type GetLatestTreeStateError;
     type GetSubtreeRootsError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetAddressUtxosError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetAddressUtxosStreamError;
 
     /// Return server metadata (chain name, block height, version, etc.).
@@ -210,6 +222,7 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<RawTransaction, Self::GetTransactionError>>;
 
     /// Return a stream of transactions for a transparent address in a block range.
+    #[cfg(feature = "globally-public-transparent")]
     #[deprecated(note = "use get_taddress_transactions instead")]
     fn get_taddress_txids(
         &self,
@@ -219,16 +232,28 @@ pub trait Indexer {
     /// Return a stream of transactions for a transparent address in a block range.
     ///
     /// Results are sorted by block height. Mempool transactions are not included.
+    #[cfg(feature = "globally-public-transparent")]
     fn get_taddress_transactions(
         &self,
         filter: TransparentAddressBlockFilter,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTransactionsError>>;
 
     /// Return the total confirmed balance for the given transparent addresses.
+    #[cfg(feature = "globally-public-transparent")]
     fn get_taddress_balance(
         &self,
         addresses: AddressList,
     ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceError>>;
+
+    /// Return the total confirmed balance by streaming addresses to the server.
+    ///
+    /// This is the client-streaming variant of [`get_taddress_balance`](Indexer::get_taddress_balance).
+    /// Accepts a `Vec<Address>` which is streamed to the server.
+    #[cfg(feature = "globally-public-transparent")]
+    fn get_taddress_balance_stream(
+        &self,
+        addresses: Vec<Address>,
+    ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceStreamError>>;
 
     /// Return a stream of compact transactions currently in the mempool.
     ///
@@ -266,6 +291,7 @@ pub trait Indexer {
     ///
     /// Results are sorted by block height. Pass `max_entries = 0` for
     /// unlimited results.
+    #[cfg(feature = "globally-public-transparent")]
     fn get_address_utxos(
         &self,
         arg: GetAddressUtxosArg,
@@ -275,6 +301,7 @@ pub trait Indexer {
     ///
     /// Prefer this over [`get_address_utxos`](Indexer::get_address_utxos)
     /// when the result set may be large.
+    #[cfg(feature = "globally-public-transparent")]
     fn get_address_utxos_stream(
         &self,
         arg: GetAddressUtxosArg,
@@ -389,14 +416,21 @@ impl Indexer for GrpcIndexer {
     type GetBlockRangeError = RpcError;
     type GetBlockRangeNullifiersError = RpcError;
     type GetTransactionError = RpcError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetTaddressTxidsError = RpcError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetTaddressTransactionsError = RpcError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetTaddressBalanceError = RpcError;
+    #[cfg(feature = "globally-public-transparent")]
+    type GetTaddressBalanceStreamError = RpcError;
     type GetMempoolTxError = RpcError;
     type GetMempoolStreamError = RpcError;
     type GetLatestTreeStateError = RpcError;
     type GetSubtreeRootsError = RpcError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetAddressUtxosError = RpcError;
+    #[cfg(feature = "globally-public-transparent")]
     type GetAddressUtxosStreamError = RpcError;
 
     async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
@@ -430,7 +464,7 @@ impl Indexer for GrpcIndexer {
         }
     }
 
-    async fn get_trees(&self, height: u64) -> Result<TreeState, GetTreesError> {
+    async fn get_tree_state(&self, height: u64) -> Result<TreeState, GetTreesError> {
         let (mut client, request) = self
             .time_boxed_call(BlockId {
                 height,
@@ -476,6 +510,7 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_transaction(request).await?.into_inner())
     }
 
+    #[cfg(feature = "globally-public-transparent")]
     #[allow(deprecated)]
     async fn get_taddress_txids(
         &self,
@@ -485,6 +520,7 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_taddress_txids(request).await?.into_inner())
     }
 
+    #[cfg(feature = "globally-public-transparent")]
     async fn get_taddress_transactions(
         &self,
         filter: TransparentAddressBlockFilter,
@@ -496,9 +532,23 @@ impl Indexer for GrpcIndexer {
             .into_inner())
     }
 
+    #[cfg(feature = "globally-public-transparent")]
     async fn get_taddress_balance(&self, addresses: AddressList) -> Result<Balance, RpcError> {
         let (mut client, request) = self.time_boxed_call(addresses).await?;
         Ok(client.get_taddress_balance(request).await?.into_inner())
+    }
+
+    #[cfg(feature = "globally-public-transparent")]
+    async fn get_taddress_balance_stream(
+        &self,
+        addresses: Vec<Address>,
+    ) -> Result<Balance, RpcError> {
+        let mut client = self.get_client().await?;
+        let stream = tokio_stream::iter(addresses);
+        Ok(client
+            .get_taddress_balance_stream(stream)
+            .await?
+            .into_inner())
     }
 
     async fn get_mempool_tx(
@@ -527,6 +577,7 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_subtree_roots(request).await?.into_inner())
     }
 
+    #[cfg(feature = "globally-public-transparent")]
     async fn get_address_utxos(
         &self,
         arg: GetAddressUtxosArg,
@@ -535,6 +586,7 @@ impl Indexer for GrpcIndexer {
         Ok(client.get_address_utxos(request).await?.into_inner())
     }
 
+    #[cfg(feature = "globally-public-transparent")]
     async fn get_address_utxos_stream(
         &self,
         arg: GetAddressUtxosArg,
