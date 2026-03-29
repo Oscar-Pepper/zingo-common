@@ -1,94 +1,476 @@
-//! `zingo-netutils`
+//! A complete [`Indexer`] abstraction for communicating with Zcash chain
+//! indexers (`lightwalletd` / `zainod`).
 //!
-//! This crate provides the `GrpcConnector` struct,
-//! used to communicate with an indexer.
+//! # Organizing principle
+//!
+//! The [`Indexer`] trait is the sole interface a Zcash wallet or tool needs
+//! to query, sync, and broadcast against a chain indexer. It is
+//! implementation-agnostic: production code uses the provided [`GrpcIndexer`]
+//! (gRPC over tonic), while tests can supply a mock implementor with no
+//! network dependency.
+//!
+//! All proto types come from
+//! [`lightwallet-protocol`](https://crates.io/crates/lightwallet-protocol)
+//! and are re-exported via `pub use lightwallet_protocol` so consumers do
+//! not need an additional dependency.
+//!
+//! # Feature gates
+//!
+//! All features are **off by default**.
+//!
+//! | Feature | What it enables |
+//! |---|---|
+//! | `globally-public-transparent` | [`TransparentIndexer`] sub-trait for t-address balance, transaction history, and UTXO queries. Pulls in `tokio-stream`. |
+//! | `ping-very-insecure` | [`Indexer::ping`] method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag. Testing only. |
+//! | `back_compatible` | [`GrpcIndexer::get_zcb_client`] returning `zcash_client_backend`'s `CompactTxStreamerClient` for pepper-sync compatibility. |
+//!
+//! **Note:** Build docs with `--all-features` so intra-doc links to
+//! feature-gated items resolve:
+//! ```text
+//! RUSTDOCFLAGS="-D warnings" cargo doc --all-features --document-private-items
+//! ```
+//!
+//! # Backwards compatibility
+//!
+//! Code that needs a raw `CompactTxStreamerClient<Channel>` (e.g.
+//! pepper-sync) can call [`GrpcIndexer::get_client`] for
+//! `lightwallet_protocol` types, or enable the `back_compatible` feature
+//! for [`GrpcIndexer::get_zcb_client`] which returns
+//! `zcash_client_backend`'s client type as a migration bridge.
 
-#[cfg(test)]
-use tokio_rustls::rustls::RootCertStore;
+use std::future::Future;
+use std::time::Duration;
+
+use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
-use zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient;
 
-#[derive(Debug, thiserror::Error)]
-pub enum GetClientError {
-    #[error("bad uri: invalid scheme")]
-    InvalidScheme,
+pub use lightwallet_protocol;
 
-    #[error("bad uri: invalid authority")]
-    InvalidAuthority,
+use lightwallet_protocol::{
+    BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
+    GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot, TreeState,
+    TxFilter,
+};
 
-    #[error("bad uri: invalid path and/or query")]
-    InvalidPathAndQuery,
+#[cfg(feature = "ping-very-insecure")]
+use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
-    #[error(transparent)]
-    Transport(#[from] tonic::transport::Error),
-}
+pub mod error;
+pub use error::*;
 
-#[cfg(test)]
-fn load_test_cert_pem() -> Option<Vec<u8>> {
-    const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
-    std::fs::read(TEST_PEMFILE_PATH).ok()
-}
-fn client_tls_config() -> Result<ClientTlsConfig, GetClientError> {
+#[cfg(feature = "globally-public-transparent")]
+mod globally_public;
+#[cfg(feature = "globally-public-transparent")]
+pub use globally_public::TransparentIndexer;
+
+fn client_tls_config() -> ClientTlsConfig {
     // Allow self-signed certs in tests
     #[cfg(test)]
     {
-        if let Some(pem) = load_test_cert_pem() {
-            return Ok(ClientTlsConfig::new()
-                .ca_certificate(tonic::transport::Certificate::from_pem(pem))
-                .with_webpki_roots());
+        ClientTlsConfig::new()
+            .ca_certificate(tonic::transport::Certificate::from_pem(
+                std::fs::read("test-data/localhost.pem").expect("test file"),
+            ))
+            .with_webpki_roots()
+    }
+    #[cfg(not(test))]
+    ClientTlsConfig::new().with_webpki_roots()
+}
+
+const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Trait for communicating with a Zcash chain indexer.
+///
+/// Implementors provide access to a lightwalletd-compatible server.
+/// Callers can depend on the following guarantees:
+///
+/// - Each method opens a fresh connection (or reuses a pooled one) — no
+///   persistent session state is assumed between calls.
+/// - Errors are partitioned per method so callers can handle connection
+///   failures separately from server-side errors.
+/// - All methods are safe to call concurrently from multiple tasks.
+pub trait Indexer {
+    type GetInfoError: std::error::Error;
+    type GetLatestBlockError: std::error::Error;
+    type SendTransactionError: std::error::Error;
+    type GetTreeStateError: std::error::Error;
+    type GetBlockError: std::error::Error;
+    type GetBlockNullifiersError: std::error::Error;
+    type GetBlockRangeError: std::error::Error;
+    type GetBlockRangeNullifiersError: std::error::Error;
+    type GetTransactionError: std::error::Error;
+    type GetMempoolTxError: std::error::Error;
+    type GetMempoolStreamError: std::error::Error;
+    type GetLatestTreeStateError: std::error::Error;
+    type GetSubtreeRootsError: std::error::Error;
+
+    #[cfg(feature = "ping-very-insecure")]
+    type PingError: std::error::Error;
+
+    /// Return server metadata (chain name, block height, version, etc.).
+    ///
+    /// The returned [`LightdInfo`] includes the chain name, current block height,
+    /// server version, and consensus branch ID. Callers should not cache this
+    /// value across sync boundaries as the block height is a point-in-time snapshot.
+    fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::GetInfoError>>;
+
+    /// Return the height and hash of the chain tip.
+    ///
+    /// The returned [`BlockId`] identifies the most recent block the server
+    /// is aware of. The hash may be omitted by some implementations.
+    fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::GetLatestBlockError>>;
+
+    /// Submit a raw transaction to the network.
+    ///
+    /// On success, returns the transaction ID as a hex string.
+    /// On rejection by the network, returns a [`Self::SendTransactionError`]
+    /// containing the rejection reason. Callers should be prepared for
+    /// transient failures and may retry.
+    fn send_transaction(
+        &self,
+        tx_bytes: Box<[u8]>,
+    ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
+
+    /// Fetch the note commitment tree state for the given block.
+    ///
+    /// Returns Sapling and Orchard commitment tree frontiers as of the
+    /// end of the specified block. The block can be identified by height,
+    /// hash, or both via [`BlockId`]. Requesting an unmined block is an error.
+    fn get_tree_state(
+        &self,
+        block_id: BlockId,
+    ) -> impl Future<Output = Result<TreeState, Self::GetTreeStateError>>;
+
+    /// Return the compact block at the given height.
+    ///
+    /// The returned [`CompactBlock`] contains compact transaction data
+    /// sufficient for trial decryption and nullifier detection.
+    fn get_block(
+        &self,
+        block_id: BlockId,
+    ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockError>>;
+
+    /// Return the compact block at the given height, containing only nullifiers.
+    ///
+    /// The returned [`CompactBlock`] omits output data, retaining only
+    /// spend nullifiers. Callers should migrate to [`get_block`](Indexer::get_block).
+    #[deprecated(note = "use get_block instead")]
+    fn get_block_nullifiers(
+        &self,
+        block_id: BlockId,
+    ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockNullifiersError>>;
+
+    /// Return a stream of consecutive compact blocks for the given range.
+    ///
+    /// Both endpoints of the range are inclusive. If `start <= end`, blocks
+    /// are yielded in ascending height order; if `start > end`, blocks are
+    /// yielded in descending height order. See the test
+    /// `tests::get_block_range_supports_descending_order` for a live
+    /// verification of descending order against a public indexer.
+    ///
+    /// Callers must consume or drop the stream before the connection is reused.
+    fn get_block_range(
+        &self,
+        range: BlockRange,
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeError>>;
+
+    /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
+    ///
+    /// Same streaming guarantees as [`get_block_range`](Indexer::get_block_range)
+    /// but each block contains only nullifiers.
+    /// Callers should migrate to [`get_block_range`](Indexer::get_block_range).
+    #[deprecated(note = "use get_block_range instead")]
+    fn get_block_range_nullifiers(
+        &self,
+        range: BlockRange,
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeNullifiersError>>;
+
+    /// Return the full serialized transaction matching the given filter.
+    ///
+    /// The filter identifies a transaction by its txid hash. The returned
+    /// [`RawTransaction`] contains the complete serialized bytes and the
+    /// block height at which it was mined (0 if in the mempool).
+    fn get_transaction(
+        &self,
+        filter: TxFilter,
+    ) -> impl Future<Output = Result<RawTransaction, Self::GetTransactionError>>;
+
+    /// Return a stream of compact transactions currently in the mempool.
+    ///
+    /// The request may include txid suffixes to exclude from the results,
+    /// allowing the caller to avoid re-fetching known transactions.
+    /// Results may be seconds out of date.
+    fn get_mempool_tx(
+        &self,
+        request: GetMempoolTxRequest,
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, Self::GetMempoolTxError>>;
+
+    /// Return a stream of raw mempool transactions.
+    ///
+    /// The stream remains open while there are mempool transactions and
+    /// closes when a new block is mined.
+    fn get_mempool_stream(
+        &self,
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetMempoolStreamError>>;
+
+    /// Return the note commitment tree state at the chain tip.
+    ///
+    /// Equivalent to calling [`get_tree_state`](Indexer::get_tree_state) with
+    /// the current tip height, but avoids the need to query the tip first.
+    fn get_latest_tree_state(
+        &self,
+    ) -> impl Future<Output = Result<TreeState, Self::GetLatestTreeStateError>>;
+
+    /// Return a stream of subtree roots for the given shielded protocol.
+    ///
+    /// Yields roots in ascending index order starting from `start_index`.
+    /// Pass `max_entries = 0` to request all available roots.
+    fn get_subtree_roots(
+        &self,
+        arg: GetSubtreeRootsArg,
+    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, Self::GetSubtreeRootsError>>;
+
+    /// Simulate server latency for testing.
+    ///
+    /// The server will delay for the requested duration before responding.
+    /// Returns the number of concurrent Ping RPCs at entry and exit.
+    /// Requires the server to be started with `--ping-very-insecure`.
+    /// Do not enable in production.
+    #[cfg(feature = "ping-very-insecure")]
+    fn ping(
+        &self,
+        duration: ProtoDuration,
+    ) -> impl Future<Output = Result<PingResponse, Self::PingError>>;
+}
+
+/// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
+#[derive(Clone)]
+pub struct GrpcIndexer {
+    uri: http::Uri,
+    scheme: String,
+    authority: http::uri::Authority,
+    endpoint: Endpoint,
+}
+
+impl std::fmt::Debug for GrpcIndexer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GrpcIndexer")
+            .field("scheme", &self.scheme)
+            .field("authority", &self.authority)
+            .finish_non_exhaustive()
+    }
+}
+
+impl GrpcIndexer {
+    pub fn new(uri: http::Uri) -> Result<Self, GetClientError> {
+        let scheme = uri
+            .scheme_str()
+            .ok_or(GetClientError::InvalidScheme)?
+            .to_string();
+        if scheme != "http" && scheme != "https" {
+            return Err(GetClientError::InvalidScheme);
+        }
+        let authority = uri
+            .authority()
+            .ok_or(GetClientError::InvalidAuthority)?
+            .clone();
+
+        let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+        let endpoint = if scheme == "https" {
+            endpoint.tls_config(client_tls_config())?
+        } else {
+            endpoint
+        };
+
+        Ok(Self {
+            uri,
+            scheme,
+            authority,
+            endpoint,
+        })
+    }
+
+    pub fn uri(&self) -> &http::Uri {
+        &self.uri
+    }
+
+    /// Connect to the pre-configured endpoint and return a gRPC client.
+    pub async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
+        let channel = self.endpoint.connect().await?;
+        Ok(CompactTxStreamerClient::new(channel))
+    }
+
+    async fn time_boxed_call<T>(
+        &self,
+        payload: T,
+    ) -> Result<(CompactTxStreamerClient<Channel>, Request<T>), GetClientError> {
+        let client = self.get_client().await?;
+        let mut request = Request::new(payload);
+        request.set_timeout(DEFAULT_GRPC_TIMEOUT);
+        Ok((client, request))
+    }
+
+    async fn stream_call<T>(
+        &self,
+        payload: T,
+    ) -> Result<(CompactTxStreamerClient<Channel>, Request<T>), GetClientError> {
+        let client = self.get_client().await?;
+        Ok((client, Request::new(payload)))
+    }
+}
+
+#[cfg(feature = "back_compatible")]
+impl GrpcIndexer {
+    /// Return a gRPC client using `zcash_client_backend`'s generated types,
+    /// for compatibility with code that expects that crate's
+    /// `CompactTxStreamerClient` (e.g. pepper-sync).
+    pub async fn get_zcb_client(
+        &self,
+    ) -> Result<
+        zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
+            Channel,
+        >,
+        GetClientError,
+    > {
+        let channel = self.endpoint.connect().await?;
+        Ok(
+            zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(channel),
+        )
+    }
+}
+
+impl Indexer for GrpcIndexer {
+    type GetInfoError = GetInfoError;
+    type GetLatestBlockError = GetLatestBlockError;
+    type SendTransactionError = SendTransactionError;
+    type GetTreeStateError = GetTreeStateError;
+    type GetBlockError = GetBlockError;
+    type GetBlockNullifiersError = GetBlockNullifiersError;
+    type GetBlockRangeError = GetBlockRangeError;
+    type GetBlockRangeNullifiersError = GetBlockRangeNullifiersError;
+    type GetTransactionError = GetTransactionError;
+    type GetMempoolTxError = GetMempoolTxError;
+    type GetMempoolStreamError = GetMempoolStreamError;
+    type GetLatestTreeStateError = GetLatestTreeStateError;
+    type GetSubtreeRootsError = GetSubtreeRootsError;
+    #[cfg(feature = "ping-very-insecure")]
+    type PingError = PingError;
+
+    async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
+        let (mut client, request) = self.time_boxed_call(Empty {}).await?;
+        Ok(client.get_lightd_info(request).await?.into_inner())
+    }
+
+    async fn get_latest_block(&self) -> Result<BlockId, GetLatestBlockError> {
+        let (mut client, request) = self.time_boxed_call(ChainSpec {}).await?;
+        Ok(client.get_latest_block(request).await?.into_inner())
+    }
+
+    async fn send_transaction(&self, tx_bytes: Box<[u8]>) -> Result<String, SendTransactionError> {
+        let (mut client, request) = self
+            .time_boxed_call(RawTransaction {
+                data: tx_bytes.to_vec(),
+                height: 0,
+            })
+            .await?;
+        let sendresponse = client.send_transaction(request).await?.into_inner();
+        if sendresponse.error_code == 0 {
+            let mut transaction_id = sendresponse.error_message;
+            if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
+                transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
+            }
+            Ok(transaction_id)
+        } else {
+            Err(SendTransactionError::SendRejected(format!(
+                "{sendresponse:?}"
+            )))
         }
     }
 
-    Ok(ClientTlsConfig::new().with_webpki_roots())
-}
-/// The connector, containing the URI to connect to.
-/// This type is mostly an interface to the `get_client` method.
-/// The proto-generated `CompactTxStreamerClient` type is the main
-/// interface to actually communicating with a Zcash indexer.
-/// Connect to the URI, and return a Client. For the full list of methods
-/// the client supports, see the service.proto file (some of the types
-/// are defined in the `compact_formats.proto` file).
-pub async fn get_client(
-    uri: http::Uri,
-) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
-    let scheme = uri.scheme_str().ok_or(GetClientError::InvalidScheme)?;
-    if scheme != "http" && scheme != "https" {
-        return Err(GetClientError::InvalidScheme);
+    async fn get_tree_state(&self, block_id: BlockId) -> Result<TreeState, GetTreeStateError> {
+        let (mut client, request) = self.time_boxed_call(block_id).await?;
+        Ok(client.get_tree_state(request).await?.into_inner())
     }
-    let _authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
 
-    let endpoint = Endpoint::from_shared(uri.to_string())?.tcp_nodelay(true);
+    async fn get_block(&self, block_id: BlockId) -> Result<CompactBlock, GetBlockError> {
+        let (mut client, request) = self.time_boxed_call(block_id).await?;
+        Ok(client.get_block(request).await?.into_inner())
+    }
 
-    let channel = if scheme == "https" {
-        let tls = client_tls_config()?;
-        endpoint.tls_config(tls)?.connect().await?
-    } else {
-        endpoint.connect().await?
-    };
+    #[allow(deprecated)]
+    async fn get_block_nullifiers(
+        &self,
+        block_id: BlockId,
+    ) -> Result<CompactBlock, GetBlockNullifiersError> {
+        let (mut client, request) = self.time_boxed_call(block_id).await?;
+        Ok(client.get_block_nullifiers(request).await?.into_inner())
+    }
 
-    Ok(CompactTxStreamerClient::new(channel))
+    async fn get_block_range(
+        &self,
+        range: BlockRange,
+    ) -> Result<tonic::Streaming<CompactBlock>, GetBlockRangeError> {
+        let (mut client, request) = self.stream_call(range).await?;
+        Ok(client.get_block_range(request).await?.into_inner())
+    }
+
+    #[allow(deprecated)]
+    async fn get_block_range_nullifiers(
+        &self,
+        range: BlockRange,
+    ) -> Result<tonic::Streaming<CompactBlock>, GetBlockRangeNullifiersError> {
+        let (mut client, request) = self.stream_call(range).await?;
+        Ok(client
+            .get_block_range_nullifiers(request)
+            .await?
+            .into_inner())
+    }
+
+    async fn get_transaction(
+        &self,
+        filter: TxFilter,
+    ) -> Result<RawTransaction, GetTransactionError> {
+        let (mut client, request) = self.time_boxed_call(filter).await?;
+        Ok(client.get_transaction(request).await?.into_inner())
+    }
+
+    async fn get_mempool_tx(
+        &self,
+        request: GetMempoolTxRequest,
+    ) -> Result<tonic::Streaming<CompactTx>, GetMempoolTxError> {
+        let (mut client, request) = self.stream_call(request).await?;
+        Ok(client.get_mempool_tx(request).await?.into_inner())
+    }
+
+    async fn get_mempool_stream(
+        &self,
+    ) -> Result<tonic::Streaming<RawTransaction>, GetMempoolStreamError> {
+        let (mut client, request) = self.stream_call(Empty {}).await?;
+        Ok(client.get_mempool_stream(request).await?.into_inner())
+    }
+
+    async fn get_latest_tree_state(&self) -> Result<TreeState, GetLatestTreeStateError> {
+        let (mut client, request) = self.time_boxed_call(Empty {}).await?;
+        Ok(client.get_latest_tree_state(request).await?.into_inner())
+    }
+
+    async fn get_subtree_roots(
+        &self,
+        arg: GetSubtreeRootsArg,
+    ) -> Result<tonic::Streaming<SubtreeRoot>, GetSubtreeRootsError> {
+        let (mut client, request) = self.stream_call(arg).await?;
+        Ok(client.get_subtree_roots(request).await?.into_inner())
+    }
+
+    #[cfg(feature = "ping-very-insecure")]
+    async fn ping(&self, duration: ProtoDuration) -> Result<PingResponse, PingError> {
+        let (mut client, request) = self.time_boxed_call(duration).await?;
+        Ok(client.ping(request).await?.into_inner())
+    }
 }
 
 #[cfg(test)]
-fn add_test_cert_to_roots(roots: &mut RootCertStore) {
-    use tonic::transport::CertificateDer;
-    eprintln!("Adding test cert to roots");
-
-    const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
-
-    let Ok(fd) = std::fs::File::open(TEST_PEMFILE_PATH) else {
-        eprintln!("Test TLS cert not found at {TEST_PEMFILE_PATH}, skipping");
-        return;
-    };
-
-    let mut buf = std::io::BufReader::new(fd);
-    let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
-        .filter_map(Result::ok)
-        .collect();
-
-    let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
-    roots.add_parsable_certificates(certs);
-}
+mod proto_agreement;
 
 #[cfg(test)]
 mod tests {
@@ -118,6 +500,28 @@ mod tests {
     use tokio_rustls::{TlsAcceptor, rustls};
 
     use super::*;
+
+    use tokio_rustls::rustls::RootCertStore;
+
+    fn add_test_cert_to_roots(roots: &mut RootCertStore) {
+        use tonic::transport::CertificateDer;
+        eprintln!("Adding test cert to roots");
+
+        const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
+
+        let Ok(fd) = std::fs::File::open(TEST_PEMFILE_PATH) else {
+            eprintln!("Test TLS cert not found at {TEST_PEMFILE_PATH}, skipping");
+            return;
+        };
+
+        let mut buf = std::io::BufReader::new(fd);
+        let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
+            .filter_map(Result::ok)
+            .collect();
+
+        let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
+        roots.add_parsable_certificates(certs);
+    }
 
     /// Ensures the committed localhost test certificate exists and is parseable as X.509.
     ///
@@ -196,7 +600,6 @@ mod tests {
 
         let certs = rustls_pemfile::certs(&mut cert_cursor)
             .filter_map(Result::ok)
-            .map(rustls::pki_types::CertificateDer::from)
             .collect::<Vec<_>>();
 
         let key = rustls_pemfile::private_key(&mut key_cursor)
@@ -228,8 +631,6 @@ mod tests {
         use tokio::net::TcpListener;
         use tokio_rustls::TlsAcceptor;
         use tokio_rustls::rustls;
-
-        let _ = rustls::crypto::ring::default_provider().install_default();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
         let addr = listener.local_addr().expect("local_addr failed");
@@ -284,7 +685,7 @@ mod tests {
             .expect("serve_connection failed");
         });
 
-        let _ = timeout(Duration::from_secs(1), ready_rx)
+        timeout(Duration::from_secs(1), ready_rx)
             .await
             .expect("server ready signal timed out")
             .expect("server dropped before ready");
@@ -333,17 +734,16 @@ mod tests {
 
     /// Validates that the connector rejects non-HTTP(S) URIs.
     ///
-    /// This test is intended to fail until production code checks for:
-    /// - `http` and `https` schemes only
-    /// and rejects everything else (e.g. `ftp`).
-    #[tokio::test]
-    async fn rejects_non_http_schemes() {
+    /// This test is intended to fail until production code checks for
+    /// `http` and `https` schemes only, rejecting everything else (e.g. `ftp`).
+    #[test]
+    fn rejects_non_http_schemes() {
         let uri: http::Uri = "ftp://example.com:1234".parse().unwrap();
-        let res = get_client(uri).await;
+        let res = GrpcIndexer::new(uri);
 
         assert!(
             res.is_err(),
-            "expected get_client() to reject non-http(s) schemes, but got Ok"
+            "expected GrpcIndexer::new() to reject non-http(s) schemes, but got Ok"
         );
     }
 
@@ -355,8 +755,6 @@ mod tests {
     #[tokio::test]
     async fn https_connector_must_not_downgrade_to_http1() {
         use http_body_util::Full;
-
-        let _ = rustls::crypto::ring::default_provider().install_default();
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
         let addr = listener.local_addr().expect("local_addr failed");
@@ -391,9 +789,8 @@ mod tests {
             .expect("endpoint")
             .tcp_nodelay(true);
 
-        let tls = client_tls_config().expect("tls config");
         let connect_res = endpoint
-            .tls_config(tls)
+            .tls_config(client_tls_config())
             .expect("tls_config failed")
             .connect()
             .await;
@@ -409,31 +806,15 @@ mod tests {
 
     #[tokio::test]
     async fn connects_to_public_mainnet_indexer_and_gets_info() {
-        use std::time::Duration;
-        use tokio::time::timeout;
-        use tonic::Request;
-        use zcash_client_backend::proto::service::Empty;
-
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let endpoint = "https://zec.rocks:443".to_string();
 
         let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
 
-        let mut client = timeout(Duration::from_secs(10), get_client(uri))
+        let response = GrpcIndexer::new(uri)
+            .expect("URI to be valid.")
+            .get_info()
             .await
-            .expect("timed out connecting to public indexer")
-            .expect("failed to connect to public indexer");
-
-        let response = timeout(
-            Duration::from_secs(10),
-            client.get_lightd_info(Request::new(Empty {})),
-        )
-        .await
-        .expect("timed out calling GetLightdInfo")
-        .expect("GetLightdInfo RPC failed")
-        .into_inner();
-
+            .expect("to get info");
         assert!(
             !response.chain_name.is_empty(),
             "chain_name should not be empty"
@@ -450,5 +831,62 @@ mod tests {
             "expected a mainnet server, got chain_name={:?}",
             response.chain_name
         );
+    }
+
+    /// The proto spec says:
+    ///   "If range.start <= range.end, blocks are returned increasing height order;
+    ///    otherwise blocks are returned in decreasing height order."
+    ///
+    /// Our doc for `get_block_range` currently claims ascending-only.
+    /// This test requests a descending range (start > end) and asserts
+    /// the server returns blocks in decreasing height order.
+    #[tokio::test]
+    async fn get_block_range_supports_descending_order() {
+        use tokio_stream::StreamExt;
+
+        let uri: http::Uri = "https://zec.rocks:443".parse().unwrap();
+        let indexer = GrpcIndexer::new(uri).expect("valid URI");
+
+        let tip = indexer.get_latest_block().await.expect("get_latest_block");
+        let start_height = tip.height;
+        let end_height = start_height.saturating_sub(4);
+
+        // start > end → proto says descending order
+        let range = BlockRange {
+            start: Some(BlockId {
+                height: start_height,
+                hash: vec![],
+            }),
+            end: Some(BlockId {
+                height: end_height,
+                hash: vec![],
+            }),
+            pool_types: vec![],
+        };
+
+        let mut stream = indexer
+            .get_block_range(range)
+            .await
+            .expect("get_block_range");
+
+        let mut heights = Vec::new();
+        while let Some(block) = stream.next().await {
+            let block = block.expect("stream item");
+            heights.push(block.height);
+        }
+
+        assert!(
+            !heights.is_empty(),
+            "expected at least one block in the descending range",
+        );
+
+        // The proto guarantees descending order when start > end.
+        // If this assertion fails, the server does not support descending ranges.
+        for window in heights.windows(2) {
+            assert!(
+                window[0] > window[1],
+                "expected descending order, but got heights: {heights:?}",
+            );
+        }
     }
 }
