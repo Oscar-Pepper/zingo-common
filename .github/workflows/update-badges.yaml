@@ -1,0 +1,46 @@
+name: Update Test Badges
+
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  update-badges:
+    name: Count tests and update badges
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Count tests and update gist
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          UNIT=$(cargo nextest run --all-features -E 'not test(connects_to_public) & not test(get_block_range_supports)' 2>&1 | grep -oP '(\d+) tests run' | grep -oP '^\d+')
+          INT=$(cargo nextest run --all-features -E 'test(connects_to_public) | test(get_block_range_supports)' 2>&1 | grep -oP '(\d+) tests run' | grep -oP '^\d+')
+          DOC=$(cargo test --doc --all-features 2>&1 | grep -oP '(\d+) passed' | grep -oP '^\d+')
+
+          echo "{\"schemaVersion\":1,\"label\":\"unit tests\",\"message\":\"$UNIT\",\"color\":\"brightgreen\"}" > /tmp/unit.json
+          echo "{\"schemaVersion\":1,\"label\":\"doc tests\",\"message\":\"$DOC\",\"color\":\"violet\"}" > /tmp/doc.json
+          echo "{\"schemaVersion\":1,\"label\":\"integration tests\",\"message\":\"$INT\",\"color\":\"blue\"}" > /tmp/integration.json
+
+          gh gist edit ${{ secrets.BADGE_GIST_ID }} \
+            -f unit.json=/tmp/unit.json \
+            -f doc.json=/tmp/doc.json \
+            -f integration.json=/tmp/integration.json
