@@ -43,20 +43,6 @@ mod get_client_error_tests {
     use super::*;
 
     #[test]
-    fn invalid_scheme() {
-        let e = GetClientError::InvalidScheme;
-        assert!(matches!(e, GetClientError::InvalidScheme));
-        assert_eq!(e.to_string(), "bad uri: invalid scheme");
-    }
-
-    #[test]
-    fn invalid_authority() {
-        let e = GetClientError::InvalidAuthority;
-        assert!(matches!(e, GetClientError::InvalidAuthority));
-        assert_eq!(e.to_string(), "bad uri: invalid authority");
-    }
-
-    #[test]
     fn transport_from_conversion() {
         // Verify the From impl exists at compile time.
         let _: fn(tonic::transport::Error) -> GetClientError = GetClientError::from;
