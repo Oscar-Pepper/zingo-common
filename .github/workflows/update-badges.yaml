@@ -13,13 +13,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.BADGES }}
-          private-key: ${{ secrets.BADGE_SECRET }}
-
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
@@ -31,20 +24,20 @@ jobs:
 
       - name: Count tests and update gist
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BADGE_SECRET }}
         run: |
           set +e
 
           UNIT_OUTPUT=$(cargo nextest run --all-features -E 'not test(connects_to_public) & not test(get_block_range_supports)' 2>&1)
-          UNIT=$(echo "$UNIT_OUTPUT" | grep -oP '\d+(?= tests? run)' | head -1)
+          UNIT=$(echo "$UNIT_OUTPUT" | grep -oE '[0-9]+ tests? run' | grep -oE '^[0-9]+' | head -1)
           UNIT=${UNIT:-0}
 
           INT_OUTPUT=$(cargo nextest run --all-features -E 'test(connects_to_public) | test(get_block_range_supports)' 2>&1)
-          INT=$(echo "$INT_OUTPUT" | grep -oP '\d+(?= tests? run)' | head -1)
+          INT=$(echo "$INT_OUTPUT" | grep -oE '[0-9]+ tests? run' | grep -oE '^[0-9]+' | head -1)
           INT=${INT:-0}
 
           DOC_OUTPUT=$(cargo test --doc --all-features 2>&1)
-          DOC=$(echo "$DOC_OUTPUT" | grep -oP '\d+(?= passed)' | head -1)
+          DOC=$(echo "$DOC_OUTPUT" | grep -oE '[0-9]+ passed' | grep -oE '^[0-9]+' | head -1)
           DOC=${DOC:-0}
 
           set -e
