@@ -2906,6 +2906,10 @@ dependencies = [
 [[package]]
 name = "zingo_common_components"
 version = "0.3.0"
+dependencies = [
+ "core2",
+ "hex",
+]
 
 [[package]]
 name = "zip32"
