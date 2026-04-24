@@ -3,7 +3,7 @@
 use core::cmp::Ordering;
 use core::fmt;
 use core::ops::{Add, Sub};
-use core2::io::{self, Read, Write};
+use std::io::{self, Read, Write};
 
 /// A wrapper type representing blockchain heights.
 ///
