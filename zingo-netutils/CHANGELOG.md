@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+### Changed
+
+- `Indexer` and `TransparentIndexer` traits:
+  - methods now return `tonic::Status` error to be more compatible as drop-in replacement for ComapctTxStreamerClient
+  - methods take a `&mut self` to allow for re-use of client instead of forcing creation of client for each rpc call
+- `GprcIndexer` struct:
+  - implementations updated for changes to `Indexer` and `TransparentIndexer` traits
+  - `new` constructor is now async
+  - `get_client` method renamed `get_surface_net_client`. naming chosen to distinguish against nym enabled clients which will also be held by `Grpcndexer`
+ 
+
+### Removed
+
+- `GprcIndexer::get_zcb_client`: crate now unified to use `lightwallet_protocol` types throughout
+
+### Deprecated
+
 ## [4.0.0]
 
 ### Added

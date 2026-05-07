@@ -250,8 +250,14 @@ impl GrpcIndexer {
         })
     }
 
+    /// Returns URI the gRPC client(s) are connected to.
     pub fn uri(&self) -> &http::Uri {
         &self.uri
+    }
+
+    /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
+    pub async fn get_surface_net_client(&self) -> CompactTxStreamerClient<Channel> {
+        self.surface_net_client.clone()
     }
 
     fn request<T>(
