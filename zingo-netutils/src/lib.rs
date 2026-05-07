@@ -22,21 +22,11 @@
 //! |---|---|
 //! | `globally-public-transparent` | [`TransparentIndexer`] sub-trait for t-address balance, transaction history, and UTXO queries. Pulls in `tokio-stream`. |
 //! | `ping-very-insecure` | [`Indexer::ping`] method. Name mirrors the lightwalletd `--ping-very-insecure` CLI flag. Testing only. |
-//! | `back_compatible` | [`GrpcIndexer::get_zcb_client`] returning `zcash_client_backend`'s `CompactTxStreamerClient` for pepper-sync compatibility. |
 //!
 //! **Note:** Build docs with `--all-features` so intra-doc links to
 //! feature-gated items resolve:
 //! ```text
 //! RUSTDOCFLAGS="-D warnings" cargo doc --all-features --document-private-items
-//! ```
-//!
-//! # Backwards compatibility
-//!
-//! Code that needs a raw `CompactTxStreamerClient<Channel>` (e.g.
-//! pepper-sync) can call [`GrpcIndexer::get_client`] for
-//! `lightwallet_protocol` types, or enable the `back_compatible` feature
-//! for [`GrpcIndexer::get_zcb_client`] which returns
-//! `zcash_client_backend`'s client type as a migration bridge.
 
 use std::future::Future;
 use std::time::Duration;
@@ -86,39 +76,19 @@ const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(10);
 ///
 /// - Each method opens a fresh connection (or reuses a pooled one) — no
 ///   persistent session state is assumed between calls.
-/// - Errors are partitioned per method so callers can handle connection
-///   failures separately from server-side errors.
-/// - All methods are safe to call concurrently from multiple tasks.
 pub trait Indexer {
-    type GetInfoError: std::error::Error;
-    type GetLatestBlockError: std::error::Error;
-    type SendTransactionError: std::error::Error;
-    type GetTreeStateError: std::error::Error;
-    type GetBlockError: std::error::Error;
-    type GetBlockNullifiersError: std::error::Error;
-    type GetBlockRangeError: std::error::Error;
-    type GetBlockRangeNullifiersError: std::error::Error;
-    type GetTransactionError: std::error::Error;
-    type GetMempoolTxError: std::error::Error;
-    type GetMempoolStreamError: std::error::Error;
-    type GetLatestTreeStateError: std::error::Error;
-    type GetSubtreeRootsError: std::error::Error;
-
-    #[cfg(feature = "ping-very-insecure")]
-    type PingError: std::error::Error;
-
     /// Return server metadata (chain name, block height, version, etc.).
     ///
     /// The returned [`LightdInfo`] includes the chain name, current block height,
     /// server version, and consensus branch ID. Callers should not cache this
     /// value across sync boundaries as the block height is a point-in-time snapshot.
-    fn get_info(&self) -> impl Future<Output = Result<LightdInfo, Self::GetInfoError>>;
+    fn get_lightd_info(&mut self) -> impl Future<Output = Result<LightdInfo, tonic::Status>>;
 
     /// Return the height and hash of the chain tip.
     ///
     /// The returned [`BlockId`] identifies the most recent block the server
     /// is aware of. The hash may be omitted by some implementations.
-    fn get_latest_block(&self) -> impl Future<Output = Result<BlockId, Self::GetLatestBlockError>>;
+    fn get_latest_block(&mut self) -> impl Future<Output = Result<BlockId, tonic::Status>>;
 
     /// Submit a raw transaction to the network.
     ///
@@ -127,9 +97,9 @@ pub trait Indexer {
     /// containing the rejection reason. Callers should be prepared for
     /// transient failures and may retry.
     fn send_transaction(
-        &self,
+        &mut self,
         tx_bytes: Box<[u8]>,
-    ) -> impl Future<Output = Result<String, Self::SendTransactionError>>;
+    ) -> impl Future<Output = Result<String, tonic::Status>>;
 
     /// Fetch the note commitment tree state for the given block.
     ///
@@ -137,18 +107,18 @@ pub trait Indexer {
     /// end of the specified block. The block can be identified by height,
     /// hash, or both via [`BlockId`]. Requesting an unmined block is an error.
     fn get_tree_state(
-        &self,
+        &mut self,
         block_id: BlockId,
-    ) -> impl Future<Output = Result<TreeState, Self::GetTreeStateError>>;
+    ) -> impl Future<Output = Result<TreeState, tonic::Status>>;
 
     /// Return the compact block at the given height.
     ///
     /// The returned [`CompactBlock`] contains compact transaction data
     /// sufficient for trial decryption and nullifier detection.
     fn get_block(
-        &self,
+        &mut self,
         block_id: BlockId,
-    ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockError>>;
+    ) -> impl Future<Output = Result<CompactBlock, tonic::Status>>;
 
     /// Return the compact block at the given height, containing only nullifiers.
     ///
@@ -156,9 +126,9 @@ pub trait Indexer {
     /// spend nullifiers. Callers should migrate to [`get_block`](Indexer::get_block).
     #[deprecated(note = "use get_block instead")]
     fn get_block_nullifiers(
-        &self,
+        &mut self,
         block_id: BlockId,
-    ) -> impl Future<Output = Result<CompactBlock, Self::GetBlockNullifiersError>>;
+    ) -> impl Future<Output = Result<CompactBlock, tonic::Status>>;
 
     /// Return a stream of consecutive compact blocks for the given range.
     ///
@@ -170,9 +140,9 @@ pub trait Indexer {
     ///
     /// Callers must consume or drop the stream before the connection is reused.
     fn get_block_range(
-        &self,
+        &mut self,
         range: BlockRange,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>>;
 
     /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
     ///
@@ -181,9 +151,9 @@ pub trait Indexer {
     /// Callers should migrate to [`get_block_range`](Indexer::get_block_range).
     #[deprecated(note = "use get_block_range instead")]
     fn get_block_range_nullifiers(
-        &self,
+        &mut self,
         range: BlockRange,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, Self::GetBlockRangeNullifiersError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>>;
 
     /// Return the full serialized transaction matching the given filter.
     ///
@@ -191,9 +161,9 @@ pub trait Indexer {
     /// [`RawTransaction`] contains the complete serialized bytes and the
     /// block height at which it was mined (0 if in the mempool).
     fn get_transaction(
-        &self,
+        &mut self,
         filter: TxFilter,
-    ) -> impl Future<Output = Result<RawTransaction, Self::GetTransactionError>>;
+    ) -> impl Future<Output = Result<RawTransaction, tonic::Status>>;
 
     /// Return a stream of compact transactions currently in the mempool.
     ///
@@ -201,34 +171,34 @@ pub trait Indexer {
     /// allowing the caller to avoid re-fetching known transactions.
     /// Results may be seconds out of date.
     fn get_mempool_tx(
-        &self,
+        &mut self,
         request: GetMempoolTxRequest,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, Self::GetMempoolTxError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, tonic::Status>>;
 
     /// Return a stream of raw mempool transactions.
     ///
     /// The stream remains open while there are mempool transactions and
     /// closes when a new block is mined.
     fn get_mempool_stream(
-        &self,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetMempoolStreamError>>;
+        &mut self,
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
 
     /// Return the note commitment tree state at the chain tip.
     ///
     /// Equivalent to calling [`get_tree_state`](Indexer::get_tree_state) with
     /// the current tip height, but avoids the need to query the tip first.
     fn get_latest_tree_state(
-        &self,
-    ) -> impl Future<Output = Result<TreeState, Self::GetLatestTreeStateError>>;
+        &mut self,
+    ) -> impl Future<Output = Result<TreeState, tonic::Status>>;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
     /// Yields roots in ascending index order starting from `start_index`.
     /// Pass `max_entries = 0` to request all available roots.
     fn get_subtree_roots(
-        &self,
+        &mut self,
         arg: GetSubtreeRootsArg,
-    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, Self::GetSubtreeRootsError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>;
 
     /// Simulate server latency for testing.
     ///
@@ -238,31 +208,21 @@ pub trait Indexer {
     /// Do not enable in production.
     #[cfg(feature = "ping-very-insecure")]
     fn ping(
-        &self,
+        &mut self,
         duration: ProtoDuration,
-    ) -> impl Future<Output = Result<PingResponse, Self::PingError>>;
+    ) -> impl Future<Output = Result<PingResponse, tonic::Status>>;
 }
 
-/// gRPC-backed [`Indexer`] that connects to a lightwalletd server.
-#[derive(Clone)]
+/// gRPC-backed [`Indexer`] that connects to a Zcash chain indexer (server).
+#[derive(Debug, Clone)]
 pub struct GrpcIndexer {
     uri: http::Uri,
-    scheme: String,
-    authority: http::uri::Authority,
-    endpoint: Endpoint,
-}
-
-impl std::fmt::Debug for GrpcIndexer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GrpcIndexer")
-            .field("scheme", &self.scheme)
-            .field("authority", &self.authority)
-            .finish_non_exhaustive()
-    }
+    surface_net_client: CompactTxStreamerClient<Channel>,
+    // TODO; add nym_client
 }
 
 impl GrpcIndexer {
-    pub fn new(uri: http::Uri) -> Result<Self, GetClientError> {
+    pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
         let scheme = uri
             .scheme_str()
             .ok_or(GetClientError::InvalidScheme)?
@@ -270,7 +230,7 @@ impl GrpcIndexer {
         if scheme != "http" && scheme != "https" {
             return Err(GetClientError::InvalidScheme);
         }
-        let authority = uri
+        let _authority = uri
             .authority()
             .ok_or(GetClientError::InvalidAuthority)?
             .clone();
@@ -281,12 +241,12 @@ impl GrpcIndexer {
         } else {
             endpoint
         };
+        let channel = endpoint.connect().await?;
+        let surface_net_client = CompactTxStreamerClient::new(channel);
 
         Ok(Self {
             uri,
-            scheme,
-            authority,
-            endpoint,
+            surface_net_client,
         })
     }
 
@@ -294,86 +254,41 @@ impl GrpcIndexer {
         &self.uri
     }
 
-    /// Connect to the pre-configured endpoint and return a gRPC client.
-    pub async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, GetClientError> {
-        let channel = self.endpoint.connect().await?;
-        Ok(CompactTxStreamerClient::new(channel))
-    }
-
-    async fn time_boxed_call<T>(
+    fn request<T>(
         &self,
         payload: T,
-    ) -> Result<(CompactTxStreamerClient<Channel>, Request<T>), GetClientError> {
-        let client = self.get_client().await?;
+    ) -> Request<T> {
+        Request::new(payload)
+    }
+
+    fn request_with_timeout<T>(
+        &self,
+        payload: T,
+    ) -> Request<T> {
         let mut request = Request::new(payload);
         request.set_timeout(DEFAULT_GRPC_TIMEOUT);
-        Ok((client, request))
-    }
 
-    async fn stream_call<T>(
-        &self,
-        payload: T,
-    ) -> Result<(CompactTxStreamerClient<Channel>, Request<T>), GetClientError> {
-        let client = self.get_client().await?;
-        Ok((client, Request::new(payload)))
-    }
-}
-
-#[cfg(feature = "back_compatible")]
-impl GrpcIndexer {
-    /// Return a gRPC client using `zcash_client_backend`'s generated types,
-    /// for compatibility with code that expects that crate's
-    /// `CompactTxStreamerClient` (e.g. pepper-sync).
-    pub async fn get_zcb_client(
-        &self,
-    ) -> Result<
-        zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
-            Channel,
-        >,
-        GetClientError,
-    > {
-        let channel = self.endpoint.connect().await?;
-        Ok(
-            zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(channel),
-        )
+        request
     }
 }
 
 impl Indexer for GrpcIndexer {
-    type GetInfoError = GetInfoError;
-    type GetLatestBlockError = GetLatestBlockError;
-    type SendTransactionError = SendTransactionError;
-    type GetTreeStateError = GetTreeStateError;
-    type GetBlockError = GetBlockError;
-    type GetBlockNullifiersError = GetBlockNullifiersError;
-    type GetBlockRangeError = GetBlockRangeError;
-    type GetBlockRangeNullifiersError = GetBlockRangeNullifiersError;
-    type GetTransactionError = GetTransactionError;
-    type GetMempoolTxError = GetMempoolTxError;
-    type GetMempoolStreamError = GetMempoolStreamError;
-    type GetLatestTreeStateError = GetLatestTreeStateError;
-    type GetSubtreeRootsError = GetSubtreeRootsError;
-    #[cfg(feature = "ping-very-insecure")]
-    type PingError = PingError;
-
-    async fn get_info(&self) -> Result<LightdInfo, GetInfoError> {
-        let (mut client, request) = self.time_boxed_call(Empty {}).await?;
-        Ok(client.get_lightd_info(request).await?.into_inner())
+    async fn get_lightd_info(&mut self) -> Result<LightdInfo, tonic::Status> {
+        let request = self.request_with_timeout(Empty {});
+        Ok(self.surface_net_client.get_lightd_info(request).await?.into_inner())
     }
 
-    async fn get_latest_block(&self) -> Result<BlockId, GetLatestBlockError> {
-        let (mut client, request) = self.time_boxed_call(ChainSpec {}).await?;
-        Ok(client.get_latest_block(request).await?.into_inner())
+    async fn get_latest_block(&mut self) -> Result<BlockId, tonic::Status> {
+        let request = self.request_with_timeout(ChainSpec {});
+        Ok(self.surface_net_client.get_latest_block(request).await?.into_inner())
     }
 
-    async fn send_transaction(&self, tx_bytes: Box<[u8]>) -> Result<String, SendTransactionError> {
-        let (mut client, request) = self
-            .time_boxed_call(RawTransaction {
+    async fn send_transaction(&mut self, tx_bytes: Box<[u8]>) -> Result<String, tonic::Status> {
+        let request = self.request_with_timeout(RawTransaction {
                 data: tx_bytes.to_vec(),
                 height: 0,
-            })
-            .await?;
-        let sendresponse = client.send_transaction(request).await?.into_inner();
+            });
+        let sendresponse = self.surface_net_client.send_transaction(request).await?.into_inner();
         if sendresponse.error_code == 0 {
             let mut transaction_id = sendresponse.error_message;
             if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
@@ -381,91 +296,89 @@ impl Indexer for GrpcIndexer {
             }
             Ok(transaction_id)
         } else {
-            Err(SendTransactionError::SendRejected(format!(
-                "{sendresponse:?}"
-            )))
+            Err(tonic::Status::new(tonic::Code::from(sendresponse.error_code), sendresponse.error_message))
         }
     }
 
-    async fn get_tree_state(&self, block_id: BlockId) -> Result<TreeState, GetTreeStateError> {
-        let (mut client, request) = self.time_boxed_call(block_id).await?;
-        Ok(client.get_tree_state(request).await?.into_inner())
+    async fn get_tree_state(&mut self, block_id: BlockId) -> Result<TreeState, tonic::Status> {
+        let request = self.request_with_timeout(block_id);
+        Ok(self.surface_net_client.get_tree_state(request).await?.into_inner())
     }
 
-    async fn get_block(&self, block_id: BlockId) -> Result<CompactBlock, GetBlockError> {
-        let (mut client, request) = self.time_boxed_call(block_id).await?;
-        Ok(client.get_block(request).await?.into_inner())
+    async fn get_block(&mut self, block_id: BlockId) -> Result<CompactBlock, tonic::Status> {
+        let request = self.request_with_timeout(block_id);
+        Ok(self.surface_net_client.get_block(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
     async fn get_block_nullifiers(
-        &self,
+        &mut self,
         block_id: BlockId,
-    ) -> Result<CompactBlock, GetBlockNullifiersError> {
-        let (mut client, request) = self.time_boxed_call(block_id).await?;
-        Ok(client.get_block_nullifiers(request).await?.into_inner())
+    ) -> Result<CompactBlock, tonic::Status> {
+        let request = self.request_with_timeout(block_id);
+        Ok(self.surface_net_client.get_block_nullifiers(request).await?.into_inner())
     }
 
     async fn get_block_range(
-        &self,
+        &mut self,
         range: BlockRange,
-    ) -> Result<tonic::Streaming<CompactBlock>, GetBlockRangeError> {
-        let (mut client, request) = self.stream_call(range).await?;
-        Ok(client.get_block_range(request).await?.into_inner())
+    ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
+        let request = self.request(range);
+        Ok(self.surface_net_client.get_block_range(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
     async fn get_block_range_nullifiers(
-        &self,
+        &mut self,
         range: BlockRange,
-    ) -> Result<tonic::Streaming<CompactBlock>, GetBlockRangeNullifiersError> {
-        let (mut client, request) = self.stream_call(range).await?;
-        Ok(client
+    ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
+        let request = self.request(range);
+        Ok(self.surface_net_client
             .get_block_range_nullifiers(request)
             .await?
             .into_inner())
     }
 
     async fn get_transaction(
-        &self,
+        &mut self,
         filter: TxFilter,
-    ) -> Result<RawTransaction, GetTransactionError> {
-        let (mut client, request) = self.time_boxed_call(filter).await?;
-        Ok(client.get_transaction(request).await?.into_inner())
+    ) -> Result<RawTransaction, tonic::Status> {
+        let request = self.request_with_timeout(filter);
+        Ok(self.surface_net_client.get_transaction(request).await?.into_inner())
     }
 
     async fn get_mempool_tx(
-        &self,
+        &mut self,
         request: GetMempoolTxRequest,
-    ) -> Result<tonic::Streaming<CompactTx>, GetMempoolTxError> {
-        let (mut client, request) = self.stream_call(request).await?;
-        Ok(client.get_mempool_tx(request).await?.into_inner())
+    ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
+        let request = self.request(request);
+        Ok(self.surface_net_client.get_mempool_tx(request).await?.into_inner())
     }
 
     async fn get_mempool_stream(
-        &self,
-    ) -> Result<tonic::Streaming<RawTransaction>, GetMempoolStreamError> {
-        let (mut client, request) = self.stream_call(Empty {}).await?;
-        Ok(client.get_mempool_stream(request).await?.into_inner())
+        &mut self,
+    ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
+        let request = self.request(Empty {});
+        Ok(self.surface_net_client.get_mempool_stream(request).await?.into_inner())
     }
 
-    async fn get_latest_tree_state(&self) -> Result<TreeState, GetLatestTreeStateError> {
-        let (mut client, request) = self.time_boxed_call(Empty {}).await?;
-        Ok(client.get_latest_tree_state(request).await?.into_inner())
+    async fn get_latest_tree_state(&mut self) -> Result<TreeState, tonic::Status> {
+        let request = self.request_with_timeout(Empty {});
+        Ok(self.surface_net_client.get_latest_tree_state(request).await?.into_inner())
     }
 
     async fn get_subtree_roots(
-        &self,
+        &mut self,
         arg: GetSubtreeRootsArg,
-    ) -> Result<tonic::Streaming<SubtreeRoot>, GetSubtreeRootsError> {
-        let (mut client, request) = self.stream_call(arg).await?;
-        Ok(client.get_subtree_roots(request).await?.into_inner())
+    ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
+        let request = self.request(arg);
+        Ok(self.surface_net_client.get_subtree_roots(request).await?.into_inner())
     }
 
     #[cfg(feature = "ping-very-insecure")]
-    async fn ping(&self, duration: ProtoDuration) -> Result<PingResponse, PingError> {
-        let (mut client, request) = self.time_boxed_call(duration).await?;
-        Ok(client.ping(request).await?.into_inner())
+    async fn ping(&mut self, duration: ProtoDuration) -> Result<PingResponse, tonic::Status> {
+        let request = self.request_with_timeout(duration);
+        Ok(self.surface_net_client.ping(request).await?.into_inner())
     }
 }
 
@@ -736,10 +649,10 @@ mod tests {
     ///
     /// This test is intended to fail until production code checks for
     /// `http` and `https` schemes only, rejecting everything else (e.g. `ftp`).
-    #[test]
-    fn rejects_non_http_schemes() {
+    #[tokio::test]
+    async fn rejects_non_http_schemes() {
         let uri: http::Uri = "ftp://example.com:1234".parse().unwrap();
-        let res = GrpcIndexer::new(uri);
+        let res = GrpcIndexer::new(uri).await;
 
         assert!(
             res.is_err(),
@@ -810,9 +723,9 @@ mod tests {
 
         let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
 
-        let response = GrpcIndexer::new(uri)
+        let response = GrpcIndexer::new(uri).await
             .expect("URI to be valid.")
-            .get_info()
+            .get_lightd_info()
             .await
             .expect("to get info");
         assert!(
@@ -845,7 +758,7 @@ mod tests {
         use tokio_stream::StreamExt;
 
         let uri: http::Uri = "https://zec.rocks:443".parse().unwrap();
-        let indexer = GrpcIndexer::new(uri).expect("valid URI");
+        let mut indexer = GrpcIndexer::new(uri).await.expect("valid URI");
 
         let tip = indexer.get_latest_block().await.expect("get_latest_block");
         let start_height = tip.height;

@@ -13,7 +13,6 @@ use lightwallet_protocol::{
     GetAddressUtxosReplyList, RawTransaction, TransparentAddressBlockFilter,
 };
 
-pub use super::error::transparent::*;
 use super::{GrpcIndexer, Indexer};
 
 /// Extension of [`Indexer`] for transparent address operations.
@@ -23,16 +22,7 @@ use super::{GrpcIndexer, Indexer};
 ///
 /// - Balance and UTXO results reflect only confirmed (mined) state.
 /// - Streaming results are sorted by block height.
-/// - Errors are partitioned per method so callers can distinguish
-///   which operation failed.
 pub trait TransparentIndexer: Indexer {
-    type GetTaddressTxidsError: std::error::Error;
-    type GetTaddressTransactionsError: std::error::Error;
-    type GetTaddressBalanceError: std::error::Error;
-    type GetTaddressBalanceStreamError: std::error::Error;
-    type GetAddressUtxosError: std::error::Error;
-    type GetAddressUtxosStreamError: std::error::Error;
-
     /// Return a stream of transactions for a transparent address in a block range.
     ///
     /// Same behavior as
@@ -40,26 +30,26 @@ pub trait TransparentIndexer: Indexer {
     /// This method is a legacy alias; callers should migrate.
     #[deprecated(note = "use get_taddress_transactions instead")]
     fn get_taddress_txids(
-        &self,
+        &mut self,
         filter: TransparentAddressBlockFilter,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTxidsError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
 
     /// Return a stream of transactions for a transparent address in a block range.
     ///
     /// Results are sorted by block height. Mempool transactions are not included.
     fn get_taddress_transactions(
-        &self,
+        &mut self,
         filter: TransparentAddressBlockFilter,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, Self::GetTaddressTransactionsError>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
 
     /// Return the total confirmed balance for the given transparent addresses.
     ///
     /// The returned [`Balance`] contains the sum in zatoshis. Only confirmed
     /// (mined) outputs are included; mempool UTXOs are not counted.
     fn get_taddress_balance(
-        &self,
+        &mut self,
         addresses: AddressList,
-    ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceError>>;
+    ) -> impl Future<Output = Result<Balance, tonic::Status>>;
 
     /// Return the total confirmed balance by streaming addresses to the server.
     ///
@@ -68,92 +58,84 @@ pub trait TransparentIndexer: Indexer {
     /// The addresses are streamed individually, avoiding message size limits
     /// for large address sets. Returns the same [`Balance`] sum.
     fn get_taddress_balance_stream(
-        &self,
+        &mut self,
         addresses: Vec<Address>,
-    ) -> impl Future<Output = Result<Balance, Self::GetTaddressBalanceStreamError>>;
+    ) -> impl Future<Output = Result<Balance, tonic::Status>>;
 
     /// Return UTXOs for the given addresses as a single response.
     ///
     /// Results are sorted by block height. Pass `max_entries = 0` for
     /// unlimited results.
     fn get_address_utxos(
-        &self,
+        &mut self,
         arg: GetAddressUtxosArg,
-    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, Self::GetAddressUtxosError>>;
+    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, tonic::Status>>;
 
     /// Return a stream of UTXOs for the given addresses.
     ///
     /// Prefer this over [`get_address_utxos`](TransparentIndexer::get_address_utxos)
     /// when the result set may be large.
     fn get_address_utxos_stream(
-        &self,
+        &mut self,
         arg: GetAddressUtxosArg,
     ) -> impl Future<
-        Output = Result<tonic::Streaming<GetAddressUtxosReply>, Self::GetAddressUtxosStreamError>,
+        Output = Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status>,
     >;
 }
 
 impl TransparentIndexer for GrpcIndexer {
-    type GetTaddressTxidsError = GetTaddressTxidsError;
-    type GetTaddressTransactionsError = GetTaddressTransactionsError;
-    type GetTaddressBalanceError = GetTaddressBalanceError;
-    type GetTaddressBalanceStreamError = GetTaddressBalanceStreamError;
-    type GetAddressUtxosError = GetAddressUtxosError;
-    type GetAddressUtxosStreamError = GetAddressUtxosStreamError;
-
     #[allow(deprecated)]
     async fn get_taddress_txids(
-        &self,
+        &mut self,
         filter: TransparentAddressBlockFilter,
-    ) -> Result<tonic::Streaming<RawTransaction>, GetTaddressTxidsError> {
-        let (mut client, request) = self.stream_call(filter).await?;
-        Ok(client.get_taddress_txids(request).await?.into_inner())
+    ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
+        let request = self.request(filter);
+        Ok(self.surface_net_client.get_taddress_txids(request).await?.into_inner())
     }
 
     async fn get_taddress_transactions(
-        &self,
+        &mut self,
         filter: TransparentAddressBlockFilter,
-    ) -> Result<tonic::Streaming<RawTransaction>, GetTaddressTransactionsError> {
-        let (mut client, request) = self.stream_call(filter).await?;
-        Ok(client
+    ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
+        let request = self.request(filter);
+        Ok(self.surface_net_client
             .get_taddress_transactions(request)
             .await?
             .into_inner())
     }
 
     async fn get_taddress_balance(
-        &self,
+        &mut self,
         addresses: AddressList,
-    ) -> Result<Balance, GetTaddressBalanceError> {
-        let (mut client, request) = self.time_boxed_call(addresses).await?;
-        Ok(client.get_taddress_balance(request).await?.into_inner())
+    ) -> Result<Balance, tonic::Status> {
+        let request = self.request_with_timeout(addresses);
+        Ok(self.surface_net_client.get_taddress_balance(request).await?.into_inner())
     }
 
     async fn get_taddress_balance_stream(
-        &self,
+        &mut self,
         addresses: Vec<Address>,
-    ) -> Result<Balance, GetTaddressBalanceStreamError> {
-        let mut client = self.get_client().await?;
+    ) -> Result<Balance, tonic::Status> {
         let stream = tokio_stream::iter(addresses);
-        Ok(client
+        Ok(self.surface_net_client
             .get_taddress_balance_stream(stream)
             .await?
             .into_inner())
     }
 
     async fn get_address_utxos(
-        &self,
+        &mut self,
         arg: GetAddressUtxosArg,
-    ) -> Result<GetAddressUtxosReplyList, GetAddressUtxosError> {
-        let (mut client, request) = self.time_boxed_call(arg).await?;
-        Ok(client.get_address_utxos(request).await?.into_inner())
+    ) -> Result<GetAddressUtxosReplyList, tonic::Status> {
+        let request = self.request_with_timeout(arg);
+        Ok(self.surface_net_client.get_address_utxos(request).await?.into_inner())
     }
 
     async fn get_address_utxos_stream(
-        &self,
+        &mut self,
         arg: GetAddressUtxosArg,
-    ) -> Result<tonic::Streaming<GetAddressUtxosReply>, GetAddressUtxosStreamError> {
-        let (mut client, request) = self.stream_call(arg).await?;
-        Ok(client.get_address_utxos_stream(request).await?.into_inner())
+    ) -> Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status> {
+        let request = self.request(arg);
+        Ok(self.surface_net_client.get_address_utxos_stream(request).await?.into_inner())
     }
 }

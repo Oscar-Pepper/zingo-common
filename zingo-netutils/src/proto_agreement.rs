@@ -19,18 +19,18 @@ use super::*;
 
 // Proto: GetLightdInfo(Empty) -> LightdInfo
 // Trait: get_info() -> LightdInfo  (Empty hidden by impl)
-async fn get_lightd_info(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_lightd_info(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let _p: LightdInfo = c
         .get_lightd_info(Request::new(Empty {}))
         .await
         .unwrap()
         .into_inner();
-    let _t: LightdInfo = i.get_info().await.unwrap();
+    let _t: LightdInfo = i.get_lightd_info().await.unwrap();
 }
 
 // Proto: GetLatestBlock(ChainSpec) -> BlockID
 // Trait: get_latest_block() -> BlockId  (ChainSpec hidden by impl)
-async fn get_latest_block(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_latest_block(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let _p: BlockId = c
         .get_latest_block(Request::new(ChainSpec {}))
         .await
@@ -41,7 +41,7 @@ async fn get_latest_block(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcInde
 
 // Proto: SendTransaction(RawTransaction) -> SendResponse
 // Trait: send_transaction(Box<[u8]>) -> String  (abstracts both sides)
-async fn send_transaction(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn send_transaction(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let _p: lightwallet_protocol::SendResponse = c
         .send_transaction(Request::new(RawTransaction {
             data: vec![],
@@ -55,7 +55,7 @@ async fn send_transaction(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcInde
 
 // Proto: GetTreeState(BlockID) -> TreeState
 // Trait: get_tree_state(BlockId) -> TreeState
-async fn get_tree_state(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_tree_state(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let id = BlockId {
         height: 0,
         hash: vec![],
@@ -70,7 +70,7 @@ async fn get_tree_state(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexe
 
 // Proto: GetBlock(BlockID) -> CompactBlock
 // Trait: get_block(BlockId) -> CompactBlock
-async fn get_block(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_block(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let id = BlockId {
         height: 0,
         hash: vec![],
@@ -86,7 +86,7 @@ async fn get_block(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
 // Proto: GetBlockNullifiers(BlockID) -> CompactBlock  [deprecated]
 // Trait: get_block_nullifiers(BlockId) -> CompactBlock
 #[allow(deprecated)]
-async fn get_block_nullifiers(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_block_nullifiers(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let id = BlockId {
         height: 0,
         hash: vec![],
@@ -101,7 +101,7 @@ async fn get_block_nullifiers(c: &mut CompactTxStreamerClient<Channel>, i: &Grpc
 
 // Proto: GetBlockRange(BlockRange) -> stream CompactBlock
 // Trait: get_block_range(BlockRange) -> Streaming<CompactBlock>
-async fn get_block_range(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_block_range(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let range = BlockRange {
         start: None,
         end: None,
@@ -118,7 +118,7 @@ async fn get_block_range(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndex
 // Proto: GetBlockRangeNullifiers(BlockRange) -> stream CompactBlock  [deprecated]
 // Trait: get_block_range_nullifiers(BlockRange) -> Streaming<CompactBlock>
 #[allow(deprecated)]
-async fn get_block_range_nullifiers(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_block_range_nullifiers(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let range = BlockRange {
         start: None,
         end: None,
@@ -134,7 +134,7 @@ async fn get_block_range_nullifiers(c: &mut CompactTxStreamerClient<Channel>, i:
 
 // Proto: GetTransaction(TxFilter) -> RawTransaction
 // Trait: get_transaction(TxFilter) -> RawTransaction
-async fn get_transaction(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_transaction(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let filter = TxFilter {
         block: None,
         index: 0,
@@ -150,7 +150,7 @@ async fn get_transaction(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndex
 
 // Proto: GetMempoolTx(GetMempoolTxRequest) -> stream CompactTx
 // Trait: get_mempool_tx(GetMempoolTxRequest) -> Streaming<CompactTx>
-async fn get_mempool_tx(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_mempool_tx(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let req = GetMempoolTxRequest {
         exclude_txid_suffixes: vec![],
         pool_types: vec![],
@@ -165,7 +165,7 @@ async fn get_mempool_tx(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexe
 
 // Proto: GetMempoolStream(Empty) -> stream RawTransaction
 // Trait: get_mempool_stream() -> Streaming<RawTransaction>  (Empty hidden by impl)
-async fn get_mempool_stream(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_mempool_stream(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let _p: tonic::Streaming<RawTransaction> = c
         .get_mempool_stream(Request::new(Empty {}))
         .await
@@ -176,7 +176,7 @@ async fn get_mempool_stream(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIn
 
 // Proto: GetLatestTreeState(Empty) -> TreeState
 // Trait: get_latest_tree_state() -> TreeState  (Empty hidden by impl)
-async fn get_latest_tree_state(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_latest_tree_state(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let _p: TreeState = c
         .get_latest_tree_state(Request::new(Empty {}))
         .await
@@ -187,7 +187,7 @@ async fn get_latest_tree_state(c: &mut CompactTxStreamerClient<Channel>, i: &Grp
 
 // Proto: GetSubtreeRoots(GetSubtreeRootsArg) -> stream SubtreeRoot
 // Trait: get_subtree_roots(GetSubtreeRootsArg) -> Streaming<SubtreeRoot>
-async fn get_subtree_roots(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn get_subtree_roots(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let arg = GetSubtreeRootsArg {
         start_index: 0,
         shielded_protocol: 0,
@@ -204,7 +204,7 @@ async fn get_subtree_roots(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcInd
 // Proto: Ping(Duration) -> PingResponse
 // Trait: ping(ProtoDuration) -> PingResponse  (aliased to avoid std collision)
 #[cfg(feature = "ping-very-insecure")]
-async fn ping(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+async fn ping(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
     let dur = ProtoDuration { interval_us: 0 };
     let _p: PingResponse = c.ping(Request::new(dur)).await.unwrap().into_inner();
     let _t: PingResponse = i.ping(dur).await.unwrap();
@@ -223,7 +223,7 @@ mod transparent {
     // Proto: GetTaddressTxids(TransparentAddressBlockFilter) -> stream RawTransaction  [deprecated]
     // Trait: get_taddress_txids(TABF) -> Streaming<RawTransaction>
     #[allow(deprecated)]
-    async fn get_taddress_txids(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+    async fn get_taddress_txids(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
         let f = TransparentAddressBlockFilter {
             address: String::new(),
             range: None,
@@ -238,7 +238,7 @@ mod transparent {
 
     // Proto: GetTaddressTransactions(TransparentAddressBlockFilter) -> stream RawTransaction
     // Trait: get_taddress_transactions(TABF) -> Streaming<RawTransaction>
-    async fn get_taddress_transactions(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+    async fn get_taddress_transactions(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
         let f = TransparentAddressBlockFilter {
             address: String::new(),
             range: None,
@@ -253,7 +253,7 @@ mod transparent {
 
     // Proto: GetTaddressBalance(AddressList) -> Balance
     // Trait: get_taddress_balance(AddressList) -> Balance
-    async fn get_taddress_balance(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+    async fn get_taddress_balance(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
         let addrs = AddressList { addresses: vec![] };
         let _p: Balance = c
             .get_taddress_balance(Request::new(addrs.clone()))
@@ -267,7 +267,7 @@ mod transparent {
     // Trait: get_taddress_balance_stream(Vec<Address>) -> Balance  (Vec streamed by impl)
     async fn get_taddress_balance_stream(
         c: &mut CompactTxStreamerClient<Channel>,
-        i: &GrpcIndexer,
+        i: &mut GrpcIndexer,
     ) {
         let addrs = vec![Address {
             address: String::new(),
@@ -282,7 +282,7 @@ mod transparent {
 
     // Proto: GetAddressUtxos(GetAddressUtxosArg) -> GetAddressUtxosReplyList
     // Trait: get_address_utxos(GetAddressUtxosArg) -> GetAddressUtxosReplyList
-    async fn get_address_utxos(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+    async fn get_address_utxos(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
         let arg = GetAddressUtxosArg {
             addresses: vec![],
             start_height: 0,
@@ -298,7 +298,7 @@ mod transparent {
 
     // Proto: GetAddressUtxosStream(GetAddressUtxosArg) -> stream GetAddressUtxosReply
     // Trait: get_address_utxos_stream(GetAddressUtxosArg) -> Streaming<GetAddressUtxosReply>
-    async fn get_address_utxos_stream(c: &mut CompactTxStreamerClient<Channel>, i: &GrpcIndexer) {
+    async fn get_address_utxos_stream(c: &mut CompactTxStreamerClient<Channel>, i: &mut GrpcIndexer) {
         let arg = GetAddressUtxosArg {
             addresses: vec![],
             start_height: 0,
