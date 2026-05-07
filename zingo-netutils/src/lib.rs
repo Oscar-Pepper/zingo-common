@@ -302,7 +302,7 @@ impl Indexer for GrpcIndexer {
             }
             Ok(transaction_id)
         } else {
-            Err(tonic::Status::new(tonic::Code::from(sendresponse.error_code), sendresponse.error_message))
+            Err(tonic::Status::new(tonic::Code::Unknown, sendresponse.error_message))
         }
     }
 
