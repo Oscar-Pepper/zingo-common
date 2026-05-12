@@ -34,8 +34,6 @@ use std::time::Duration;
 use tonic::Request;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
-pub use lightwallet_protocol;
-
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
     GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot, TreeState,
@@ -46,7 +44,10 @@ use lightwallet_protocol::{
 use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
 pub mod error;
+
+pub use lightwallet_protocol;
 pub use error::*;
+pub use tonic::{Streaming, Status};
 
 #[cfg(feature = "globally-public-transparent")]
 mod globally_public;
