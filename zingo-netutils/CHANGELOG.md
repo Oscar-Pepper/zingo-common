@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GprcIndexer` struct:
   - implementations updated for changes to `Indexer` and `TransparentIndexer` traits
   - `new` constructor is now async
-  - `get_client` method renamed `get_surface_net_client`. naming chosen to distinguish against nym enabled clients which will also be held by `Grpcndexer`
+  - `get_client` method renamed `get_clear_net_client`. naming chosen to distinguish against nym enabled clients which will also be held by `Grpcndexer`
  
 
 ### Removed

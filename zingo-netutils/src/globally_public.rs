@@ -90,7 +90,7 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
         let request = self.request(filter);
-        Ok(self.surface_net_client.get_taddress_txids(request).await?.into_inner())
+        Ok(self.clear_net_client.get_taddress_txids(request).await?.into_inner())
     }
 
     async fn get_taddress_transactions(
@@ -98,7 +98,7 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
         let request = self.request(filter);
-        Ok(self.surface_net_client
+        Ok(self.clear_net_client
             .get_taddress_transactions(request)
             .await?
             .into_inner())
@@ -109,7 +109,7 @@ impl TransparentIndexer for GrpcIndexer {
         addresses: AddressList,
     ) -> Result<Balance, tonic::Status> {
         let request = self.request_with_timeout(addresses);
-        Ok(self.surface_net_client.get_taddress_balance(request).await?.into_inner())
+        Ok(self.clear_net_client.get_taddress_balance(request).await?.into_inner())
     }
 
     async fn get_taddress_balance_stream(
@@ -117,7 +117,7 @@ impl TransparentIndexer for GrpcIndexer {
         addresses: Vec<Address>,
     ) -> Result<Balance, tonic::Status> {
         let stream = tokio_stream::iter(addresses);
-        Ok(self.surface_net_client
+        Ok(self.clear_net_client
             .get_taddress_balance_stream(stream)
             .await?
             .into_inner())
@@ -128,7 +128,7 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
     ) -> Result<GetAddressUtxosReplyList, tonic::Status> {
         let request = self.request_with_timeout(arg);
-        Ok(self.surface_net_client.get_address_utxos(request).await?.into_inner())
+        Ok(self.clear_net_client.get_address_utxos(request).await?.into_inner())
     }
 
     async fn get_address_utxos_stream(
@@ -136,6 +136,6 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
     ) -> Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status> {
         let request = self.request(arg);
-        Ok(self.surface_net_client.get_address_utxos_stream(request).await?.into_inner())
+        Ok(self.clear_net_client.get_address_utxos_stream(request).await?.into_inner())
     }
 }

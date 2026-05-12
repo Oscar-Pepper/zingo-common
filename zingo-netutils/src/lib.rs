@@ -218,7 +218,7 @@ pub trait Indexer {
 #[derive(Debug, Clone)]
 pub struct GrpcIndexer {
     uri: http::Uri,
-    surface_net_client: CompactTxStreamerClient<Channel>,
+    clear_net_client: CompactTxStreamerClient<Channel>,
     // TODO; add nym_client
 }
 
@@ -243,11 +243,11 @@ impl GrpcIndexer {
             endpoint
         };
         let channel = endpoint.connect().await?;
-        let surface_net_client = CompactTxStreamerClient::new(channel);
+        let clear_net_client = CompactTxStreamerClient::new(channel);
 
         Ok(Self {
             uri,
-            surface_net_client,
+            clear_net_client,
         })
     }
 
@@ -257,8 +257,8 @@ impl GrpcIndexer {
     }
 
     /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
-    pub async fn get_surface_net_client(&self) -> CompactTxStreamerClient<Channel> {
-        self.surface_net_client.clone()
+    pub async fn get_clear_net_client(&self) -> CompactTxStreamerClient<Channel> {
+        self.clear_net_client.clone()
     }
 
     fn request<T>(
@@ -282,12 +282,12 @@ impl GrpcIndexer {
 impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self) -> Result<LightdInfo, tonic::Status> {
         let request = self.request_with_timeout(Empty {});
-        Ok(self.surface_net_client.get_lightd_info(request).await?.into_inner())
+        Ok(self.clear_net_client.get_lightd_info(request).await?.into_inner())
     }
 
     async fn get_latest_block(&mut self) -> Result<BlockId, tonic::Status> {
         let request = self.request_with_timeout(ChainSpec {});
-        Ok(self.surface_net_client.get_latest_block(request).await?.into_inner())
+        Ok(self.clear_net_client.get_latest_block(request).await?.into_inner())
     }
 
     async fn send_transaction(&mut self, tx_bytes: Box<[u8]>) -> Result<String, tonic::Status> {
@@ -295,7 +295,7 @@ impl Indexer for GrpcIndexer {
                 data: tx_bytes.to_vec(),
                 height: 0,
             });
-        let sendresponse = self.surface_net_client.send_transaction(request).await?.into_inner();
+        let sendresponse = self.clear_net_client.send_transaction(request).await?.into_inner();
         if sendresponse.error_code == 0 {
             let mut transaction_id = sendresponse.error_message;
             if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
@@ -309,12 +309,12 @@ impl Indexer for GrpcIndexer {
 
     async fn get_tree_state(&mut self, block_id: BlockId) -> Result<TreeState, tonic::Status> {
         let request = self.request_with_timeout(block_id);
-        Ok(self.surface_net_client.get_tree_state(request).await?.into_inner())
+        Ok(self.clear_net_client.get_tree_state(request).await?.into_inner())
     }
 
     async fn get_block(&mut self, block_id: BlockId) -> Result<CompactBlock, tonic::Status> {
         let request = self.request_with_timeout(block_id);
-        Ok(self.surface_net_client.get_block(request).await?.into_inner())
+        Ok(self.clear_net_client.get_block(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
@@ -323,7 +323,7 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
     ) -> Result<CompactBlock, tonic::Status> {
         let request = self.request_with_timeout(block_id);
-        Ok(self.surface_net_client.get_block_nullifiers(request).await?.into_inner())
+        Ok(self.clear_net_client.get_block_nullifiers(request).await?.into_inner())
     }
 
     async fn get_block_range(
@@ -331,7 +331,7 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
         let request = self.request(range);
-        Ok(self.surface_net_client.get_block_range(request).await?.into_inner())
+        Ok(self.clear_net_client.get_block_range(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
@@ -340,7 +340,7 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
         let request = self.request(range);
-        Ok(self.surface_net_client
+        Ok(self.clear_net_client
             .get_block_range_nullifiers(request)
             .await?
             .into_inner())
@@ -351,7 +351,7 @@ impl Indexer for GrpcIndexer {
         filter: TxFilter,
     ) -> Result<RawTransaction, tonic::Status> {
         let request = self.request_with_timeout(filter);
-        Ok(self.surface_net_client.get_transaction(request).await?.into_inner())
+        Ok(self.clear_net_client.get_transaction(request).await?.into_inner())
     }
 
     async fn get_mempool_tx(
@@ -359,19 +359,19 @@ impl Indexer for GrpcIndexer {
         request: GetMempoolTxRequest,
     ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
         let request = self.request(request);
-        Ok(self.surface_net_client.get_mempool_tx(request).await?.into_inner())
+        Ok(self.clear_net_client.get_mempool_tx(request).await?.into_inner())
     }
 
     async fn get_mempool_stream(
         &mut self,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
         let request = self.request(Empty {});
-        Ok(self.surface_net_client.get_mempool_stream(request).await?.into_inner())
+        Ok(self.clear_net_client.get_mempool_stream(request).await?.into_inner())
     }
 
     async fn get_latest_tree_state(&mut self) -> Result<TreeState, tonic::Status> {
         let request = self.request_with_timeout(Empty {});
-        Ok(self.surface_net_client.get_latest_tree_state(request).await?.into_inner())
+        Ok(self.clear_net_client.get_latest_tree_state(request).await?.into_inner())
     }
 
     async fn get_subtree_roots(
@@ -379,13 +379,13 @@ impl Indexer for GrpcIndexer {
         arg: GetSubtreeRootsArg,
     ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
         let request = self.request(arg);
-        Ok(self.surface_net_client.get_subtree_roots(request).await?.into_inner())
+        Ok(self.clear_net_client.get_subtree_roots(request).await?.into_inner())
     }
 
     #[cfg(feature = "ping-very-insecure")]
     async fn ping(&mut self, duration: ProtoDuration) -> Result<PingResponse, tonic::Status> {
         let request = self.request_with_timeout(duration);
-        Ok(self.surface_net_client.ping(request).await?.into_inner())
+        Ok(self.clear_net_client.ping(request).await?.into_inner())
     }
 }
 
