@@ -6,12 +6,13 @@
 //! publicly visible on-chain and using these methods leaks which
 //! addresses belong to the caller.
 
-use std::future::Future;
+use std::{future::Future, time::Duration};
 
 use lightwallet_protocol::{
     Address, AddressList, Balance, GetAddressUtxosArg, GetAddressUtxosReply,
     GetAddressUtxosReplyList, RawTransaction, TransparentAddressBlockFilter,
 };
+use tonic::Request;
 
 use super::{GrpcIndexer, Indexer};
 
@@ -32,6 +33,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_txids(
         &mut self,
         filter: TransparentAddressBlockFilter,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
 
     /// Return a stream of transactions for a transparent address in a block range.
@@ -40,6 +42,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_transactions(
         &mut self,
         filter: TransparentAddressBlockFilter,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
 
     /// Return the total confirmed balance for the given transparent addresses.
@@ -49,6 +52,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_balance(
         &mut self,
         addresses: AddressList,
+        timeout: Duration,
     ) -> impl Future<Output = Result<Balance, tonic::Status>>;
 
     /// Return the total confirmed balance by streaming addresses to the server.
@@ -69,6 +73,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_address_utxos(
         &mut self,
         arg: GetAddressUtxosArg,
+        timeout: Duration,
     ) -> impl Future<Output = Result<GetAddressUtxosReplyList, tonic::Status>>;
 
     /// Return a stream of UTXOs for the given addresses.
@@ -78,6 +83,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_address_utxos_stream(
         &mut self,
         arg: GetAddressUtxosArg,
+        timeout: Duration,
     ) -> impl Future<
         Output = Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status>,
     >;
@@ -88,16 +94,20 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_taddress_txids(
         &mut self,
         filter: TransparentAddressBlockFilter,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let request = self.request(filter);
+        let mut request = Request::new(filter);
+        request.set_timeout(timeout);
         Ok(self.clear_net_client.get_taddress_txids(request).await?.into_inner())
     }
 
     async fn get_taddress_transactions(
         &mut self,
         filter: TransparentAddressBlockFilter,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let request = self.request(filter);
+ let mut request = Request::new(filter);
+        request.set_timeout(timeout);
         Ok(self.clear_net_client
             .get_taddress_transactions(request)
             .await?
@@ -107,8 +117,10 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_taddress_balance(
         &mut self,
         addresses: AddressList,
+        timeout: Duration,
     ) -> Result<Balance, tonic::Status> {
-        let request = self.request_with_timeout(addresses);
+        let mut request = Request::new(addresses);
+        request.set_timeout(timeout);
         Ok(self.clear_net_client.get_taddress_balance(request).await?.into_inner())
     }
 
@@ -126,16 +138,20 @@ impl TransparentIndexer for GrpcIndexer {
     async fn get_address_utxos(
         &mut self,
         arg: GetAddressUtxosArg,
+        timeout: Duration,
     ) -> Result<GetAddressUtxosReplyList, tonic::Status> {
-        let request = self.request_with_timeout(arg);
+        let mut request = Request::new(arg);
+        request.set_timeout(timeout);
         Ok(self.clear_net_client.get_address_utxos(request).await?.into_inner())
     }
 
     async fn get_address_utxos_stream(
         &mut self,
         arg: GetAddressUtxosArg,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status> {
-        let request = self.request(arg);
+        let mut request = Request::new(arg);
+        request.set_timeout(timeout);
         Ok(self.clear_net_client.get_address_utxos_stream(request).await?.into_inner())
     }
 }
