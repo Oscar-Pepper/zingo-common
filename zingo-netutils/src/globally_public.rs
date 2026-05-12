@@ -34,7 +34,7 @@ pub trait TransparentIndexer: Indexer {
         &mut self,
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
     /// Return a stream of transactions for a transparent address in a block range.
     ///
@@ -43,7 +43,7 @@ pub trait TransparentIndexer: Indexer {
         &mut self,
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
     /// Return the total confirmed balance for the given transparent addresses.
     ///
@@ -53,7 +53,7 @@ pub trait TransparentIndexer: Indexer {
         &mut self,
         addresses: AddressList,
         timeout: Duration,
-    ) -> impl Future<Output = Result<Balance, tonic::Status>>;
+    ) -> impl Future<Output = Result<Balance, tonic::Status>> + Send;
 
     /// Return the total confirmed balance by streaming addresses to the server.
     ///
@@ -64,7 +64,7 @@ pub trait TransparentIndexer: Indexer {
     fn get_taddress_balance_stream(
         &mut self,
         addresses: Vec<Address>,
-    ) -> impl Future<Output = Result<Balance, tonic::Status>>;
+    ) -> impl Future<Output = Result<Balance, tonic::Status>> + Send;
 
     /// Return UTXOs for the given addresses as a single response.
     ///
@@ -74,7 +74,7 @@ pub trait TransparentIndexer: Indexer {
         &mut self,
         arg: GetAddressUtxosArg,
         timeout: Duration,
-    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, tonic::Status>>;
+    ) -> impl Future<Output = Result<GetAddressUtxosReplyList, tonic::Status>> + Send;
 
     /// Return a stream of UTXOs for the given addresses.
     ///
@@ -86,7 +86,7 @@ pub trait TransparentIndexer: Indexer {
         timeout: Duration,
     ) -> impl Future<
         Output = Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status>,
-    >;
+    > + Send;
 }
 
 impl TransparentIndexer for GrpcIndexer {
