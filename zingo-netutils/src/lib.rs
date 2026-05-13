@@ -81,13 +81,13 @@ pub trait Indexer {
     /// The returned [`LightdInfo`] includes the chain name, current block height,
     /// server version, and consensus branch ID. Callers should not cache this
     /// value across sync boundaries as the block height is a point-in-time snapshot.
-    fn get_lightd_info(&mut self, timeout: Duration) -> impl Future<Output = Result<LightdInfo, tonic::Status>>;
+    fn get_lightd_info(&mut self, timeout: Duration) -> impl Future<Output = Result<LightdInfo, tonic::Status>> + Send;
 
     /// Return the height and hash of the chain tip.
     ///
     /// The returned [`BlockId`] identifies the most recent block the server
     /// is aware of. The hash may be omitted by some implementations.
-    fn get_latest_block(&mut self, timeout: Duration) -> impl Future<Output = Result<BlockId, tonic::Status>>;
+    fn get_latest_block(&mut self, timeout: Duration) -> impl Future<Output = Result<BlockId, tonic::Status>> + Send;
 
     /// Submit a raw transaction to the network.
     ///
@@ -99,7 +99,7 @@ pub trait Indexer {
         &mut self,
 
 tx: RawTransaction, timeout: Duration,
-     ) -> impl Future<Output = Result<String, tonic::Status>>;
+     ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
 
     /// Fetch the note commitment tree state for the given block.
     ///
@@ -110,7 +110,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         block_id: BlockId,
  timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>>;
+    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -120,7 +120,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         block_id: BlockId,
  timeout: Duration,
-    ) -> impl Future<Output = Result<CompactBlock, tonic::Status>>;
+    ) -> impl Future<Output = Result<CompactBlock, tonic::Status>> + Send;
 
     /// Return the compact block at the given height, containing only nullifiers.
     ///
@@ -131,7 +131,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         block_id: BlockId,
  timeout: Duration,
-    ) -> impl Future<Output = Result<CompactBlock, tonic::Status>>;
+    ) -> impl Future<Output = Result<CompactBlock, tonic::Status>> + Send;
 
     /// Return a stream of consecutive compact blocks for the given range.
     ///
@@ -146,7 +146,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         range: BlockRange,
  timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
 
     /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
     ///
@@ -158,7 +158,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         range: BlockRange,
  timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
 
     /// Return the full serialized transaction matching the given filter.
     ///
@@ -169,7 +169,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         filter: TxFilter,
  timeout: Duration,
-    ) -> impl Future<Output = Result<RawTransaction, tonic::Status>>;
+    ) -> impl Future<Output = Result<RawTransaction, tonic::Status>> + Send;
 
     /// Return a stream of compact transactions currently in the mempool.
     ///
@@ -180,7 +180,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         request: GetMempoolTxRequest,
  timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, tonic::Status>> + Send;
 
     /// Return a stream of raw mempool transactions.
     ///
@@ -189,7 +189,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_mempool_stream(
         &mut self,
  timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
     /// Return the note commitment tree state at the chain tip.
     ///
@@ -198,7 +198,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_latest_tree_state(
         &mut self,
  timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>>;
+    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -208,7 +208,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         arg: GetSubtreeRootsArg,
  timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>;
+    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, tonic::Status>> + Send;
 
     /// Simulate server latency for testing.
     ///
@@ -221,7 +221,7 @@ tx: RawTransaction, timeout: Duration,
         &mut self,
         duration: ProtoDuration,
  timeout: Duration,
-    ) -> impl Future<Output = Result<PingResponse, tonic::Status>>;
+    ) -> impl Future<Output = Result<PingResponse, tonic::Status>> + Send;
 }
 
 /// gRPC-backed [`Indexer`] that connects to a Zcash chain indexer (server).
