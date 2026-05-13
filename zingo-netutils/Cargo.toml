@@ -1,6 +1,6 @@
 [package]
 name = "zingo-netutils"
-version = "4.0.0"
+version = "5.0.0"
 description = "network utility crate"
 authors = ["zingo@zingolabs.org"]
 edition.workspace = true
