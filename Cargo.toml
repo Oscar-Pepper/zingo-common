@@ -20,7 +20,9 @@ thiserror = "1.0.64"
 x509-parser = "0.18"
 lightwallet-protocol = "0.3.0"
 tokio-stream = "0.1"
-zcash_client_backend = { version = "0.21", features = ["lightwalletd-tonic"] }
 
 # encoding
 hex = "0.4.3"
+
+# zcash
+zcash_client_backend = { version = "0.22", features = ["lightwalletd-tonic"] }
