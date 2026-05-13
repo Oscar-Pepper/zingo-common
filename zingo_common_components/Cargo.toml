@@ -13,3 +13,4 @@ license = "MIT"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
+hex.workspace = true

@@ -1,5 +1,193 @@
 //! Module for types associated with the zcash protocol and consensus.
 
+use core::cmp::Ordering;
+use core::fmt;
+use core::ops::{Add, Sub};
+use std::io::{self, Read, Write};
+
+/// A wrapper type representing blockchain heights.
+///
+/// Safe conversion from various integer types, as well as addition and subtraction, are
+/// provided.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BlockHeight(u32);
+
+/// The height of the genesis block on a network.
+pub const H0: BlockHeight = BlockHeight(0);
+
+impl BlockHeight {
+    /// Constructs [`BlockHeight`] from `u32`.
+    pub const fn from_u32(v: u32) -> BlockHeight {
+        BlockHeight(v)
+    }
+
+    /// Subtracts the provided value from this height, returning [`H0`] if this would result in
+    /// underflow of the wrapped `u32`.
+    pub fn saturating_sub(self, v: u32) -> BlockHeight {
+        BlockHeight(self.0.saturating_sub(v))
+    }
+}
+
+impl fmt::Display for BlockHeight {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl Ord for BlockHeight {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for BlockHeight {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl From<u32> for BlockHeight {
+    fn from(value: u32) -> Self {
+        BlockHeight(value)
+    }
+}
+
+impl From<BlockHeight> for u32 {
+    fn from(value: BlockHeight) -> u32 {
+        value.0
+    }
+}
+
+impl TryFrom<u64> for BlockHeight {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        u32::try_from(value).map(BlockHeight)
+    }
+}
+
+impl From<BlockHeight> for u64 {
+    fn from(value: BlockHeight) -> u64 {
+        value.0 as u64
+    }
+}
+
+impl TryFrom<i32> for BlockHeight {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        u32::try_from(value).map(BlockHeight)
+    }
+}
+
+impl TryFrom<i64> for BlockHeight {
+    type Error = core::num::TryFromIntError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        u32::try_from(value).map(BlockHeight)
+    }
+}
+
+impl From<BlockHeight> for i64 {
+    fn from(value: BlockHeight) -> i64 {
+        value.0 as i64
+    }
+}
+
+impl Add<u32> for BlockHeight {
+    type Output = Self;
+
+    fn add(self, other: u32) -> Self {
+        BlockHeight(self.0.saturating_add(other))
+    }
+}
+
+impl Sub<u32> for BlockHeight {
+    type Output = Self;
+
+    fn sub(self, other: u32) -> Self {
+        BlockHeight(self.0.saturating_sub(other))
+    }
+}
+
+impl Sub<BlockHeight> for BlockHeight {
+    type Output = u32;
+
+    fn sub(self, other: BlockHeight) -> u32 {
+        self.0.saturating_sub(other.0)
+    }
+}
+
+/// The identifier for a Zcash transaction.
+///
+/// - For v1-4 transactions, this is a double-SHA-256 hash of the encoded transaction.
+///   This means that it is malleable, and only a reliable identifier for transactions
+///   that have been mined.
+/// - For v5 transactions onwards, this identifier is derived only from "effecting" data,
+///   and is non-malleable in all contexts.
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+pub struct TxId([u8; 32]);
+
+impl fmt::Debug for TxId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The (byte-flipped) hex string is more useful than the raw bytes, because we can
+        // look that up in RPC methods and block explorers.
+        let txid_str = self.to_string();
+        f.debug_tuple("TxId").field(&txid_str).finish()
+    }
+}
+
+impl fmt::Display for TxId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut data = self.0;
+        data.reverse();
+        formatter.write_str(&hex::encode(data))
+    }
+}
+
+impl AsRef<[u8; 32]> for TxId {
+    fn as_ref(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl From<TxId> for [u8; 32] {
+    fn from(value: TxId) -> Self {
+        value.0
+    }
+}
+
+impl TxId {
+    /// The all-zeros txid. This is reserved as the txid of the transparent input to a coinbase
+    /// transaction.
+    pub const NULL: TxId = TxId([0u8; 32]);
+
+    /// Wraps the given byte array as a TxId value
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        TxId(bytes)
+    }
+
+    /// Reads a 32-byte txid directly from the provided reader.
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let mut hash = [0u8; 32];
+        reader.read_exact(&mut hash)?;
+        Ok(TxId::from_bytes(hash))
+    }
+
+    /// Writes the 32-byte payload directly to the provided writer.
+    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_all(&self.0)?;
+        Ok(())
+    }
+
+    /// Returns true when the txid consists of all zeros, indicating the input
+    /// to a coinbase transaction.
+    pub fn is_null(&self) -> bool {
+        *self == Self::NULL
+    }
+}
+
 /// Network types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NetworkType {
