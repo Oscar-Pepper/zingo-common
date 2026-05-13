@@ -45,9 +45,9 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
 pub mod error;
 
-pub use lightwallet_protocol;
 pub use error::*;
-pub use tonic::{Streaming, Status};
+pub use lightwallet_protocol;
+pub use tonic::{Status, Streaming};
 
 #[cfg(feature = "globally-public-transparent")]
 mod globally_public;
@@ -81,25 +81,31 @@ pub trait Indexer {
     /// The returned [`LightdInfo`] includes the chain name, current block height,
     /// server version, and consensus branch ID. Callers should not cache this
     /// value across sync boundaries as the block height is a point-in-time snapshot.
-    fn get_lightd_info(&mut self, timeout: Duration) -> impl Future<Output = Result<LightdInfo, tonic::Status>> + Send;
+    fn get_lightd_info(
+        &mut self,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<LightdInfo, tonic::Status>> + Send;
 
     /// Return the height and hash of the chain tip.
     ///
     /// The returned [`BlockId`] identifies the most recent block the server
     /// is aware of. The hash may be omitted by some implementations.
-    fn get_latest_block(&mut self, timeout: Duration) -> impl Future<Output = Result<BlockId, tonic::Status>> + Send;
+    fn get_latest_block(
+        &mut self,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<BlockId, tonic::Status>> + Send;
 
     /// Submit a raw transaction to the network.
     ///
     /// On success, returns the transaction ID as a hex string.
-    /// On rejection by the network, returns a [`Self::SendTransactionError`]
+    /// On rejection by the network, returns a [`tonic::Status`]
     /// containing the rejection reason. Callers should be prepared for
     /// transient failures and may retry.
     fn send_transaction(
         &mut self,
-
-tx: RawTransaction, timeout: Duration,
-     ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
+        tx: RawTransaction,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
 
     /// Fetch the note commitment tree state for the given block.
     ///
@@ -109,7 +115,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_tree_state(
         &mut self,
         block_id: BlockId,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
 
     /// Return the compact block at the given height.
@@ -119,7 +125,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_block(
         &mut self,
         block_id: BlockId,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<CompactBlock, tonic::Status>> + Send;
 
     /// Return the compact block at the given height, containing only nullifiers.
@@ -130,7 +136,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_block_nullifiers(
         &mut self,
         block_id: BlockId,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<CompactBlock, tonic::Status>> + Send;
 
     /// Return a stream of consecutive compact blocks for the given range.
@@ -145,7 +151,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_block_range(
         &mut self,
         range: BlockRange,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
 
     /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
@@ -157,7 +163,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_block_range_nullifiers(
         &mut self,
         range: BlockRange,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
 
     /// Return the full serialized transaction matching the given filter.
@@ -168,7 +174,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_transaction(
         &mut self,
         filter: TxFilter,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<RawTransaction, tonic::Status>> + Send;
 
     /// Return a stream of compact transactions currently in the mempool.
@@ -179,7 +185,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_mempool_tx(
         &mut self,
         request: GetMempoolTxRequest,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, tonic::Status>> + Send;
 
     /// Return a stream of raw mempool transactions.
@@ -188,7 +194,7 @@ tx: RawTransaction, timeout: Duration,
     /// closes when a new block is mined.
     fn get_mempool_stream(
         &mut self,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
     /// Return the note commitment tree state at the chain tip.
@@ -197,7 +203,7 @@ tx: RawTransaction, timeout: Duration,
     /// the current tip height, but avoids the need to query the tip first.
     fn get_latest_tree_state(
         &mut self,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
@@ -207,7 +213,7 @@ tx: RawTransaction, timeout: Duration,
     fn get_subtree_roots(
         &mut self,
         arg: GetSubtreeRootsArg,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, tonic::Status>> + Send;
 
     /// Simulate server latency for testing.
@@ -220,7 +226,7 @@ tx: RawTransaction, timeout: Duration,
     fn ping(
         &mut self,
         duration: ProtoDuration,
- timeout: Duration,
+        timeout: Duration,
     ) -> impl Future<Output = Result<PingResponse, tonic::Status>> + Send;
 }
 
@@ -276,19 +282,35 @@ impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_lightd_info(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_lightd_info(request)
+            .await?
+            .into_inner())
     }
 
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
         let mut request = Request::new(ChainSpec {});
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_latest_block(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_latest_block(request)
+            .await?
+            .into_inner())
     }
 
-    async fn send_transaction(&mut self, tx: RawTransaction, timeout: Duration) -> Result<String, tonic::Status> {
+    async fn send_transaction(
+        &mut self,
+        tx: RawTransaction,
+        timeout: Duration,
+    ) -> Result<String, tonic::Status> {
         let mut request = Request::new(tx);
         request.set_timeout(timeout);
-        let sendresponse = self.clear_net_client.send_transaction(request).await?.into_inner();
+        let sendresponse = self
+            .clear_net_client
+            .send_transaction(request)
+            .await?
+            .into_inner();
         if sendresponse.error_code == 0 {
             let mut transaction_id = sendresponse.error_message;
             if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
@@ -296,17 +318,32 @@ impl Indexer for GrpcIndexer {
             }
             Ok(transaction_id)
         } else {
-            Err(tonic::Status::new(tonic::Code::Unknown, sendresponse.error_message))
+            Err(tonic::Status::new(
+                tonic::Code::Unknown,
+                sendresponse.error_message,
+            ))
         }
     }
 
-    async fn get_tree_state(&mut self, block_id: BlockId, timeout: Duration) -> Result<TreeState, tonic::Status> {
+    async fn get_tree_state(
+        &mut self,
+        block_id: BlockId,
+        timeout: Duration,
+    ) -> Result<TreeState, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_tree_state(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_tree_state(request)
+            .await?
+            .into_inner())
     }
 
-    async fn get_block(&mut self, block_id: BlockId, timeout: Duration) -> Result<CompactBlock, tonic::Status> {
+    async fn get_block(
+        &mut self,
+        block_id: BlockId,
+        timeout: Duration,
+    ) -> Result<CompactBlock, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
         Ok(self.clear_net_client.get_block(request).await?.into_inner())
@@ -315,32 +352,42 @@ impl Indexer for GrpcIndexer {
     #[allow(deprecated)]
     async fn get_block_nullifiers(
         &mut self,
-        block_id: BlockId
-, timeout: Duration    ) -> Result<CompactBlock, tonic::Status> {
+        block_id: BlockId,
+        timeout: Duration,
+    ) -> Result<CompactBlock, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_block_nullifiers(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_block_nullifiers(request)
+            .await?
+            .into_inner())
     }
 
     async fn get_block_range(
         &mut self,
         range: BlockRange,
- timeout: Duration,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
         let mut request = Request::new(range);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_block_range(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_block_range(request)
+            .await?
+            .into_inner())
     }
 
     #[allow(deprecated)]
     async fn get_block_range_nullifiers(
         &mut self,
         range: BlockRange,
- timeout: Duration,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
         let mut request = Request::new(range);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client
+        Ok(self
+            .clear_net_client
             .get_block_range_nullifiers(request)
             .await?
             .into_inner())
@@ -349,53 +396,76 @@ impl Indexer for GrpcIndexer {
     async fn get_transaction(
         &mut self,
         filter: TxFilter,
- timeout: Duration,
+        timeout: Duration,
     ) -> Result<RawTransaction, tonic::Status> {
         let mut request = Request::new(filter);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_transaction(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_transaction(request)
+            .await?
+            .into_inner())
     }
 
     async fn get_mempool_tx(
         &mut self,
         request: GetMempoolTxRequest,
- timeout: Duration,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
         let mut request = Request::new(request);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_mempool_tx(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_mempool_tx(request)
+            .await?
+            .into_inner())
     }
 
     async fn get_mempool_stream(
         &mut self,
- timeout: Duration,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_mempool_stream(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_mempool_stream(request)
+            .await?
+            .into_inner())
     }
 
-    async fn get_latest_tree_state(&mut self,
- timeout: Duration,
+    async fn get_latest_tree_state(
+        &mut self,
+        timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_latest_tree_state(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_latest_tree_state(request)
+            .await?
+            .into_inner())
     }
 
     async fn get_subtree_roots(
         &mut self,
         arg: GetSubtreeRootsArg,
- timeout: Duration,
+        timeout: Duration,
     ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
         let mut request = Request::new(arg);
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_subtree_roots(request).await?.into_inner())
+        Ok(self
+            .clear_net_client
+            .get_subtree_roots(request)
+            .await?
+            .into_inner())
     }
 
     #[cfg(feature = "ping-very-insecure")]
-    async fn ping(&mut self, duration: ProtoDuration,
- timeout: Duration,
+    async fn ping(
+        &mut self,
+        duration: ProtoDuration,
+        timeout: Duration,
     ) -> Result<PingResponse, tonic::Status> {
         let mut request = Request::new(duration);
         request.set_timeout(timeout);
@@ -743,7 +813,8 @@ mod tests {
 
         let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
 
-        let response = GrpcIndexer::new(uri).await
+        let response = GrpcIndexer::new(uri)
+            .await
             .expect("URI to be valid.")
             .get_lightd_info(DEFAULT_TIMEOUT)
             .await
@@ -780,7 +851,10 @@ mod tests {
         let uri: http::Uri = "https://zec.rocks:443".parse().unwrap();
         let mut indexer = GrpcIndexer::new(uri).await.expect("valid URI");
 
-        let tip = indexer.get_latest_block(DEFAULT_TIMEOUT).await.expect("get_latest_block");
+        let tip = indexer
+            .get_latest_block(DEFAULT_TIMEOUT)
+            .await
+            .expect("get_latest_block");
         let start_height = tip.height;
         let end_height = start_height.saturating_sub(4);
 

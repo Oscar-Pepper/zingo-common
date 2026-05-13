@@ -14,11 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Indexer` and `TransparentIndexer` traits:
   - methods now return `tonic::Status` error to be more compatible as drop-in replacement for ComapctTxStreamerClient
   - methods take a `&mut self` to allow for re-use of client instead of forcing creation of client for each rpc call
+  - method returns constrained to impl `Send`
 - `GprcIndexer` struct:
   - implementations updated for changes to `Indexer` and `TransparentIndexer` traits
   - `new` constructor is now async
   - `get_client` method renamed `get_clear_net_client`. naming chosen to distinguish against nym enabled clients which will also be held by `Grpcndexer`
- 
+
 
 ### Removed
 
