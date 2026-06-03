@@ -18,12 +18,10 @@ tokio-rustls.workspace = true
 tonic.workspace = true
 lightwallet-protocol.workspace = true
 tokio-stream = { workspace = true, optional = true }
-zcash_client_backend = { workspace = true, optional = true }
 
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
-back_compatible = ["dep:zcash_client_backend"]
 
 [dev-dependencies]
 tokio-stream.workspace = true
