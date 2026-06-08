@@ -221,6 +221,7 @@ pub struct ActivationHeights {
     nu5: Option<u32>,
     nu6: Option<u32>,
     nu6_1: Option<u32>,
+    nu6_2: Option<u32>,
     nu7: Option<u32>,
 }
 
@@ -235,6 +236,7 @@ impl Default for ActivationHeights {
             .set_nu5(Some(1))
             .set_nu6(Some(1))
             .set_nu6_1(Some(1))
+            .set_nu6_2(Some(1))
             .set_nu7(None)
             .build()
     }
@@ -286,6 +288,11 @@ impl ActivationHeights {
         self.nu6_1
     }
 
+    /// Returns nu6.2 network upgrade activation height.
+    pub fn nu6_2(&self) -> Option<u32> {
+        self.nu6_2
+    }
+
     /// Returns nu7 network upgrade activation height.
     pub fn nu7(&self) -> Option<u32> {
         self.nu7
@@ -302,6 +309,7 @@ pub struct ActivationHeightsBuilder {
     nu5: Option<u32>,
     nu6: Option<u32>,
     nu6_1: Option<u32>,
+    nu6_2: Option<u32>,
     nu7: Option<u32>,
 }
 
@@ -323,6 +331,7 @@ impl ActivationHeightsBuilder {
             nu5: None,
             nu6: None,
             nu6_1: None,
+            nu6_2: None,
             nu7: None,
         }
     }
@@ -383,6 +392,13 @@ impl ActivationHeightsBuilder {
         self
     }
 
+    /// Set `nu6_2` field.
+    pub fn set_nu6_2(mut self, height: Option<u32>) -> Self {
+        self.nu6_2 = height;
+
+        self
+    }
+
     /// Set `nu7` field.
     pub fn set_nu7(mut self, height: Option<u32>) -> Self {
         self.nu7 = height;
@@ -414,8 +430,11 @@ impl ActivationHeightsBuilder {
         if let Some(b) = self.nu6_1 {
             assert!(self.nu6.is_some_and(|a| a <= b));
         }
-        if let Some(b) = self.nu7 {
+        if let Some(b) = self.nu6_2 {
             assert!(self.nu6_1.is_some_and(|a| a <= b));
+        }
+        if let Some(b) = self.nu7 {
+            assert!(self.nu6_2.or(self.nu6_1).is_some_and(|a| a <= b));
         }
 
         ActivationHeights {
@@ -427,7 +446,41 @@ impl ActivationHeightsBuilder {
             nu5: self.nu5,
             nu6: self.nu6,
             nu6_1: self.nu6_1,
+            nu6_2: self.nu6_2,
             nu7: self.nu7,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ActivationHeights;
+
+    #[test]
+    fn activation_heights_preserve_nu6_2() {
+        let heights = ActivationHeights::builder()
+            .set_overwinter(Some(1))
+            .set_sapling(Some(2))
+            .set_blossom(Some(3))
+            .set_heartwood(Some(4))
+            .set_canopy(Some(5))
+            .set_nu5(Some(6))
+            .set_nu6(Some(7))
+            .set_nu6_1(Some(8))
+            .set_nu6_2(Some(9))
+            .set_nu7(None)
+            .build();
+
+        assert_eq!(heights.nu6_2(), Some(9));
+    }
+
+    #[test]
+    #[should_panic]
+    fn activation_heights_reject_nu6_2_before_nu6_1() {
+        let _ = ActivationHeights::builder()
+            .set_nu6(Some(7))
+            .set_nu6_1(Some(8))
+            .set_nu6_2(Some(7))
+            .build();
     }
 }
