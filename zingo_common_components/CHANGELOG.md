@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [0.3.1] 2026-06-07
+
+### Deprecated
+
+### Added
+
+- `protocol::BlockHeight`: block height type with arithmetic, ordering, and
+  numeric conversions (incl. `H0`, `from_u32`, `saturating_sub`).
+- `protocol::TxId`: transaction identifier type with `read`/`write`,
+  `is_null`, `NULL`, and `from_bytes`.
+- `protocol::ActivationHeights::nu6_2` and
+  `protocol::ActivationHeights::set_nu6_2`: NU6.2 activation height support.
+
+### Changed
+
+### Removed
+
 ## [0.3.0] 2026-02-26
 
 ### Deprecated
